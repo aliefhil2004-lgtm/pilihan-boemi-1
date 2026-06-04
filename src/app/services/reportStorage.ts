@@ -1,5 +1,6 @@
 import type { StoredEmergencyReport } from '../types/emergency';
 import { deleteReportsFromFirebase, syncReportToFirebase, syncReportsToFirebase } from './firebaseSync';
+import { createIncident, deleteIncidents } from './incidentsApi';
 
 const REPORT_STORAGE_KEY = 'emergencyReports';
 const CHAT_STORAGE_KEY = 'emergencyChats';
@@ -38,13 +39,15 @@ export function saveReport(report: StoredEmergencyReport) {
   const reports = cleanupExpiredReports();
   localStorage.setItem(REPORT_STORAGE_KEY, JSON.stringify([report, ...reports]));
   window.dispatchEvent(new Event('emergency-reports-updated'));
-  void syncReportToFirebase(report);
+  void createIncident(report)
+    .then(() => syncReportToFirebase(report))
+    .catch(() => syncReportToFirebase(report));
 }
 
-export function replaceReports(reports: StoredEmergencyReport[]) {
+export function replaceReports(reports: StoredEmergencyReport[], syncCloud = true) {
   localStorage.setItem(REPORT_STORAGE_KEY, JSON.stringify(reports));
   window.dispatchEvent(new Event('emergency-reports-updated'));
-  void syncReportsToFirebase(reports);
+  if (syncCloud) void syncReportsToFirebase(reports);
 }
 
 export function clearReportHistory() {
@@ -66,7 +69,7 @@ export function deleteReports(reportIds: string[]) {
   localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(remainingChats));
   window.dispatchEvent(new Event('emergency-reports-updated'));
   window.dispatchEvent(new Event('emergency-chat-updated'));
-  void deleteReportsFromFirebase(reportIds);
+  void deleteIncidents(reportIds).catch(() => deleteReportsFromFirebase(reportIds));
 }
 
 export function resetPreviousHistoryOnce() {

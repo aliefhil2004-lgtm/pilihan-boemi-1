@@ -8,6 +8,9 @@
     },
     "api/route.ts": {
       "maxDuration": 15
+    },
+    "api/incidents.ts": {
+      "maxDuration": 30
     }
   },
   "rewrites": [

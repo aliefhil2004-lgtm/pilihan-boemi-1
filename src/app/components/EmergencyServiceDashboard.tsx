@@ -8,6 +8,7 @@ import { createServiceStatuses, getOverallStatus, getReportServices, getServiceS
 import { cleanupExpiredReports, replaceReports } from '../services/reportStorage';
 import type { AseanCountry } from '../config/asean';
 import { fetchDrivingRoute } from '../services/routing';
+import { updateIncidentStatus } from '../services/incidentsApi';
 
 type EmergencyReport = Omit<StoredEmergencyReport, 'timestamp'> & {
   timestamp: Date;
@@ -120,6 +121,18 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
     timestamp: new Date().toISOString()
   });
 
+  const persistStatusUpdate = (
+    updatedReports: EmergencyReport[],
+    reportId: string,
+    status: 'responding' | 'arrived' | 'resolved',
+    assignment?: UnitAssignment
+  ) => {
+    setReports(updatedReports);
+    replaceReports(updatedReports, false);
+    void updateIncidentStatus(reportId, serviceType, status, assignment)
+      .catch(() => replaceReports(updatedReports));
+  };
+
   const calculateNearestUnits = async (report: EmergencyReport) => {
     setIsCalculatingUnits(true);
     const destination = report.coords ?? country.center;
@@ -163,8 +176,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
           ))
         : r
     );
-    setReports(updatedReports);
-    replaceReports(updatedReports);
+    persistStatusUpdate(updatedReports, reportId, 'responding', selectedAssignment);
     setSelectedReport(updatedReports.find(report => report.id === reportId) ?? null);
     toast.success(`${selectedAssignment?.unit ?? unitIds[serviceType]} dispatched`);
   };
@@ -175,8 +187,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
         ? updateUnitStatus(r, 'resolved', undefined, createAuditEntry('report_resolved', 'Report marked resolved'))
         : r
     );
-    setReports(updatedReports);
-    replaceReports(updatedReports);
+    persistStatusUpdate(updatedReports, reportId, 'resolved');
     setSelectedReport(null);
   };
 
@@ -186,8 +197,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
         ? updateUnitStatus(r, 'arrived', undefined, createAuditEntry('unit_arrived', 'Assigned unit arrived on scene'))
         : r
     );
-    setReports(updatedReports);
-    replaceReports(updatedReports);
+    persistStatusUpdate(updatedReports, reportId, 'arrived');
     setSelectedReport(updatedReports.find(report => report.id === reportId) ?? null);
   };
 
