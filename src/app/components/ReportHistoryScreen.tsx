@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Clock, Eye, MapPin, MessageSquare, Navigation, ShieldCheck, Trash2 } from 'lucide-react';
+import { ArrowLeft, CheckSquare, Clock, Eye, MapPin, MessageSquare, Navigation, ShieldCheck, Trash2, X } from 'lucide-react';
 import { getReportServices, type StoredEmergencyReport } from '../types/emergency';
-import { cleanupExpiredReports, clearReportHistory } from '../services/reportStorage';
+import { cleanupExpiredReports, deleteReports } from '../services/reportStorage';
 
 interface ReportHistoryScreenProps {
   initialReportId?: string | null;
@@ -18,6 +18,8 @@ const statusStyles = {
 export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack }: ReportHistoryScreenProps) {
   const [reports, setReports] = useState<StoredEmergencyReport[]>([]);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(initialReportId ?? null);
+  const [isSelecting, setIsSelecting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   useEffect(() => {
     const refresh = () => setReports(cleanupExpiredReports());
@@ -33,6 +35,22 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack }: Re
   }, []);
 
   const selectedReport = reports.find(report => report.id === selectedReportId);
+  const toggleSelected = (reportId: string) => {
+    setSelectedIds(ids =>
+      ids.includes(reportId) ? ids.filter(id => id !== reportId) : [...ids, reportId]
+    );
+  };
+
+  const cancelSelection = () => {
+    setIsSelecting(false);
+    setSelectedIds([]);
+  };
+
+  const deleteSelected = () => {
+    deleteReports(selectedIds);
+    setReports(reports.filter(report => !selectedIds.includes(report.id)));
+    cancelSelection();
+  };
 
   return (
     <div className="flex h-full flex-col bg-gradient-to-b from-gray-900 to-black pb-20 text-white">
@@ -43,20 +61,31 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack }: Re
             <h1 className="text-2xl font-bold">{selectedReport ? 'Report Details' : 'Report History'}</h1>
             <p className="text-sm text-gray-400">{selectedReport ? 'Response status and communication' : 'Review submitted emergency reports'}</p>
           </div>
-          {!selectedReport && <button
-            onClick={() => {
-              clearReportHistory();
-              setReports([]);
-            }}
-            className="ml-auto flex h-10 w-10 items-center justify-center rounded-lg bg-red-500/15 text-red-300 hover:bg-red-500/25 sm:w-auto sm:px-3"
-            aria-label="Clear report history"
-          >
-            <Trash2 className="h-4 w-4" /> <span className="hidden sm:inline">Clear History</span>
-          </button>}
+          {!selectedReport && reports.length > 0 && (
+            <button
+              onClick={() => isSelecting ? cancelSelection() : setIsSelecting(true)}
+              className="ml-auto flex h-10 items-center justify-center gap-2 rounded-lg bg-gray-800 px-3 text-gray-200 hover:bg-gray-700"
+            >
+              {isSelecting ? <X className="h-4 w-4" /> : <CheckSquare className="h-4 w-4" />}
+              <span className="text-sm">{isSelecting ? 'Cancel' : 'Select'}</span>
+            </button>
+          )}
         </div>
         <p className="mt-3 text-xs text-gray-500">Reports and related chats are automatically removed after 1 hour.</p>
       </header>
       <main className="app-scrollbar flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
+        {!selectedReport && isSelecting && (
+          <div className="flex items-center justify-between rounded-xl border border-gray-700 bg-gray-800/80 p-3">
+            <span className="text-sm text-gray-300">{selectedIds.length} report selected</span>
+            <button
+              onClick={deleteSelected}
+              disabled={selectedIds.length === 0}
+              className="flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:bg-gray-700 disabled:text-gray-500"
+            >
+              <Trash2 className="h-4 w-4" /> Delete Selected
+            </button>
+          </div>
+        )}
         {selectedReport && (
           <div className="space-y-4">
             <button
@@ -121,15 +150,36 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack }: Re
           <>
         {reports.length === 0 && <p className="py-20 text-center text-gray-500">No reports yet</p>}
         {reports.map(report => (
-          <article key={report.id} className="rounded-lg border border-gray-700 bg-gray-800/70 p-4">
+          <article
+            key={report.id}
+            className={`relative rounded-lg border bg-gray-800/70 p-4 ${
+              selectedIds.includes(report.id) ? 'border-blue-500 ring-1 ring-blue-500/50' : 'border-gray-700'
+            }`}
+          >
+            {isSelecting && (
+              <button
+                onClick={() => toggleSelected(report.id)}
+                className="absolute inset-0 z-10 rounded-lg"
+                aria-label={`${selectedIds.includes(report.id) ? 'Deselect' : 'Select'} report`}
+              />
+            )}
             <div className="mb-3 flex items-start justify-between gap-3">
               <div>
                 <h2 className="font-bold">{report.emergencyType ?? 'Emergency Report'}</h2>
                 <p className="mt-1 text-sm text-gray-300">{report.description || 'Image-based emergency report'}</p>
               </div>
-              <span className={`rounded-full border px-3 py-1 text-xs font-bold capitalize ${statusStyles[report.status]}`}>
-                {report.status}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className={`rounded-full border px-3 py-1 text-xs font-bold capitalize ${statusStyles[report.status]}`}>
+                  {report.status}
+                </span>
+                {isSelecting && (
+                  <span className={`flex h-6 w-6 items-center justify-center rounded border ${
+                    selectedIds.includes(report.id) ? 'border-blue-400 bg-blue-500 text-white' : 'border-gray-500'
+                  }`}>
+                    {selectedIds.includes(report.id) && <CheckSquare className="h-4 w-4" />}
+                  </span>
+                )}
+              </div>
             </div>
             <div className="mb-3 flex flex-wrap gap-2">
               {getReportServices(report).map(service => (
@@ -142,7 +192,8 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack }: Re
             </div>
             <button
               onClick={() => setSelectedReportId(report.id)}
-              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-semibold hover:bg-blue-700"
+              disabled={isSelecting}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-semibold hover:bg-blue-700 disabled:bg-gray-700"
             >
               <Eye className="h-4 w-4" /> Details
             </button>

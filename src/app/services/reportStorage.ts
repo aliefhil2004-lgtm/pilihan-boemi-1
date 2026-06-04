@@ -44,6 +44,20 @@ export function clearReportHistory() {
   window.dispatchEvent(new Event('emergency-chat-updated'));
 }
 
+export function deleteReports(reportIds: string[]) {
+  const ids = new Set(reportIds);
+  const reports = readReports().filter(report => !ids.has(report.id));
+  const chats = JSON.parse(localStorage.getItem(CHAT_STORAGE_KEY) || '{}') as Record<string, unknown>;
+  const remainingChats = Object.fromEntries(
+    Object.entries(chats).filter(([reportId]) => !ids.has(reportId))
+  );
+
+  localStorage.setItem(REPORT_STORAGE_KEY, JSON.stringify(reports));
+  localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(remainingChats));
+  window.dispatchEvent(new Event('emergency-reports-updated'));
+  window.dispatchEvent(new Event('emergency-chat-updated'));
+}
+
 export function resetPreviousHistoryOnce() {
   if (localStorage.getItem(RESET_VERSION_KEY) === CURRENT_RESET_VERSION) return;
   clearReportHistory();
