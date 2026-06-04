@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Clock, Eye, MapPin, MessageSquare, Navigation, ShieldCheck, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Clock, Eye, MapPin, MessageSquare, Navigation, Trash2, X } from 'lucide-react';
 import { getReportServices, type StoredEmergencyReport } from '../types/emergency';
 import { cleanupExpiredReports, deleteReports } from '../services/reportStorage';
 
@@ -56,7 +56,6 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack }: Re
     <div className="flex h-full flex-col bg-gradient-to-b from-gray-900 to-black pb-20 text-white">
       <header className="border-b border-gray-800 py-5 pl-20 pr-5 sm:pr-6">
         <div className="flex items-center gap-3">
-          <ShieldCheck className="h-7 w-7 text-blue-400" />
           <div>
             <h1 className="text-2xl font-bold">{selectedReport ? 'Report Details' : 'Report History'}</h1>
             <p className="text-sm text-gray-400">{selectedReport ? 'Response status and communication' : 'Review submitted emergency reports'}</p>
