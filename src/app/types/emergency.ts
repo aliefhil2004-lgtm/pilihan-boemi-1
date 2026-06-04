@@ -1,5 +1,21 @@
 export type ServiceType = 'ambulance' | 'fire' | 'police';
-export type ReportStatus = 'pending' | 'responding' | 'resolved';
+export type ReportStatus = 'pending' | 'responding' | 'arrived' | 'resolved';
+
+export interface UnitAssignment {
+  unit: string;
+  assignedAt: string;
+  etaMinutes: number;
+  distanceKm: number;
+  origin: { lat: number; lng: number };
+}
+
+export interface AuditEntry {
+  id: string;
+  service: ServiceType;
+  action: 'report_created' | 'unit_dispatched' | 'unit_arrived' | 'report_resolved';
+  label: string;
+  timestamp: string;
+}
 
 export interface StoredEmergencyReport {
   id: string;
@@ -17,6 +33,8 @@ export interface StoredEmergencyReport {
   service?: ServiceType;
   services?: ServiceType[];
   serviceStatuses?: Partial<Record<ServiceType, ReportStatus>>;
+  assignedUnits?: Partial<Record<ServiceType, UnitAssignment>>;
+  auditTrail?: AuditEntry[];
   reporterPhone?: string;
   detectedIndicators?: string[];
   countryCode?: string;
@@ -50,7 +68,13 @@ export function getOverallStatus(
   const values = Object.values(statuses);
   if (!values.length) return fallback;
   if (values.every(status => status === 'resolved')) return 'resolved';
-  if (values.some(status => status === 'responding' || status === 'resolved')) {
+  if (
+    values.some(status => status === 'arrived') &&
+    values.every(status => status === 'arrived' || status === 'resolved')
+  ) {
+    return 'arrived';
+  }
+  if (values.some(status => status === 'responding' || status === 'arrived' || status === 'resolved')) {
     return 'responding';
   }
   return 'pending';

@@ -12,6 +12,7 @@ interface ReportHistoryScreenProps {
 const statusStyles = {
   pending: 'border-yellow-500/40 bg-yellow-500/10 text-yellow-300',
   responding: 'border-blue-500/40 bg-blue-500/10 text-blue-300',
+  arrived: 'border-cyan-500/40 bg-cyan-500/10 text-cyan-300',
   resolved: 'border-green-500/40 bg-green-500/10 text-green-300'
 };
 
@@ -148,6 +149,29 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack }: Re
                   <h3 className="mb-2 font-semibold">Assessment Summary</h3>
                   {selectedReport.detectedIndicators.map(indicator => (
                     <p key={indicator} className="text-sm text-gray-400">- {indicator}</p>
+                  ))}
+                </div>
+              ) : null}
+
+              {selectedReport.assignedUnits && Object.keys(selectedReport.assignedUnits).length > 0 && (
+                <div className="mt-5 rounded-xl border border-blue-500/30 bg-blue-500/10 p-4">
+                  <h3 className="mb-2 font-semibold text-blue-200">Assigned Responders</h3>
+                  {Object.entries(selectedReport.assignedUnits).map(([service, assignment]) => (
+                    <p key={service} className="text-sm text-gray-300">
+                      <span className="capitalize">{service}</span>: <strong>{assignment?.unit}</strong> · {assignment?.etaMinutes} min initial ETA
+                    </p>
+                  ))}
+                </div>
+              )}
+
+              {selectedReport.auditTrail?.length ? (
+                <div className="mt-5 rounded-xl border border-gray-700 bg-gray-900/50 p-4">
+                  <h3 className="mb-2 font-semibold">Response Timeline</h3>
+                  {selectedReport.auditTrail.map(entry => (
+                    <div key={entry.id} className="border-l border-gray-600 py-1 pl-3 text-sm">
+                      <p className="text-gray-300">{entry.label}</p>
+                      <p className="text-xs text-gray-500">{new Date(entry.timestamp).toLocaleString()}</p>
+                    </div>
                   ))}
                 </div>
               ) : null}

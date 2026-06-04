@@ -5,7 +5,7 @@ import { MapContainer, Marker, Polyline, Popup, TileLayer } from 'react-leaflet'
 import { fetchLiveGps } from '../services/liveGps';
 import { civilianMarkerIcon, serviceMarkerIcons } from '../utils/mapMarkers';
 import { cleanupExpiredReports } from '../services/reportStorage';
-import { getServiceStatus, type ServiceType, type StoredEmergencyReport } from '../types/emergency';
+import { getServiceStatus, type ServiceType, type StoredEmergencyReport, type UnitAssignment } from '../types/emergency';
 import { fetchDrivingRoute } from '../services/routing';
 
 interface LiveTrackingScreenProps {
@@ -32,16 +32,18 @@ interface RouteSummary {
 function ResponderRoute({
   serviceType,
   userLocation,
+  assignment,
   onRouteUpdate
 }: {
   serviceType: ServiceType;
   userLocation: { lat: number; lng: number };
+  assignment?: UnitAssignment;
   onRouteUpdate: (service: ServiceType, summary: RouteSummary) => void;
 }) {
   const index = ['ambulance', 'fire', 'police'].indexOf(serviceType) + 1;
   const [position, setPosition] = useState({
-    lat: userLocation.lat - 0.0015 * index,
-    lng: userLocation.lng - 0.0012 * index
+    lat: assignment?.origin.lat ?? userLocation.lat - 0.0015 * index,
+    lng: assignment?.origin.lng ?? userLocation.lng - 0.0012 * index
   });
   const positionRef = useRef(position);
   const [routePositions, setRoutePositions] = useState<Array<[number, number]>>([]);
@@ -83,12 +85,12 @@ function ResponderRoute({
       window.removeEventListener('storage', update);
       window.removeEventListener('emergency-gps-updated', update);
     };
-  }, [onRouteUpdate, serviceType, userLocation.lat, userLocation.lng]);
+  }, [assignment?.unit, onRouteUpdate, serviceType, userLocation.lat, userLocation.lng]);
 
   return (
     <>
       <Marker position={[position.lat, position.lng]} icon={serviceMarkerIcons[serviceType]}>
-        <Popup>{serviceConfig[serviceType].name} on the way</Popup>
+        <Popup>{assignment?.unit ?? serviceConfig[serviceType].name} on the way</Popup>
       </Marker>
       <Polyline positions={routePositions} pathOptions={{ color: '#2563eb', weight: 5, opacity: 0.85 }} />
     </>
@@ -100,14 +102,14 @@ export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, onOpe
   const [routeSummaries, setRouteSummaries] = useState<Partial<Record<ServiceType, RouteSummary>>>({});
   const services = [...new Set(serviceTypes)];
   const activeServices = report
-    ? services.filter(service => ['responding', 'resolved'].includes(getServiceStatus(report, service)))
+    ? services.filter(service => ['responding', 'arrived', 'resolved'].includes(getServiceStatus(report, service)))
     : [];
   const trackingActive = activeServices.length > 0;
   const statusSteps = [
     { label: 'Request Received', active: true },
     { label: 'Accepted by Service', active: trackingActive },
     { label: 'Units Dispatched', active: trackingActive },
-    { label: 'Live Tracking', active: trackingActive }
+    { label: 'Arrived', active: Boolean(report && services.some(service => ['arrived', 'resolved'].includes(getServiceStatus(report, service)))) }
   ];
 
   useEffect(() => {
@@ -160,6 +162,7 @@ export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, onOpe
               key={service}
               serviceType={service}
               userLocation={userLocation}
+              assignment={report?.assignedUnits?.[service]}
               onRouteUpdate={handleRouteUpdate}
             />
           ))}
@@ -210,7 +213,9 @@ export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, onOpe
                 <Icon className={`h-7 w-7 ${config.color}`} />
                 <div>
                   <p className="font-bold">{config.name}</p>
-                  <p className="text-xs text-gray-400">Unit {config.unit} is responding</p>
+                  <p className="text-xs text-gray-400">
+                    Unit {report?.assignedUnits?.[service]?.unit ?? config.unit} is {getServiceStatus(report!, service) === 'arrived' ? 'on scene' : 'responding'}
+                  </p>
                   {routeSummaries[service] && (
                     <p className="mt-1 text-xs text-blue-300">
                       {routeSummaries[service]!.distanceKm.toFixed(1)} km · {routeSummaries[service]!.etaMinutes} min

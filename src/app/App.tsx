@@ -238,7 +238,14 @@ const newReport: StoredEmergencyReport = {
   detectedIndicators,
   countryCode: country.code,
   timestamp: new Date(),
-  status: 'pending'
+  status: 'pending',
+  auditTrail: [{
+    id: `${reportId}-created`,
+    service: aiResult.service,
+    action: 'report_created',
+    label: 'Emergency report submitted',
+    timestamp: new Date().toISOString()
+  }]
 };
 
 saveReport(newReport);

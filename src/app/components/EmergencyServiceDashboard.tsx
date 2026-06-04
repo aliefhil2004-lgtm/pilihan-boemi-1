@@ -4,13 +4,18 @@ import { EmergencyMap } from './EmergencyMap.tsx';
 import { toast } from 'sonner';
 import { publishLiveGps } from '../services/liveGps';
 import { LocationPicker } from './LocationPicker';
-import { createServiceStatuses, getOverallStatus, getReportServices, getServiceStatus, type ServiceType, type StoredEmergencyReport } from '../types/emergency';
+import { createServiceStatuses, getOverallStatus, getReportServices, getServiceStatus, type AuditEntry, type ServiceType, type StoredEmergencyReport, type UnitAssignment } from '../types/emergency';
 import { cleanupExpiredReports, replaceReports } from '../services/reportStorage';
 import type { AseanCountry } from '../config/asean';
+import { fetchDrivingRoute } from '../services/routing';
 
 type EmergencyReport = Omit<StoredEmergencyReport, 'timestamp'> & {
   timestamp: Date;
 };
+
+interface UnitCandidate extends UnitAssignment {
+  recommended?: boolean;
+}
 
 interface EmergencyServiceDashboardProps {
   serviceType: ServiceType;
@@ -25,6 +30,8 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
   const [filter, setFilter] = useState<'all' | 'pending' | 'responding'>('pending');
   const [isSharingGps, setIsSharingGps] = useState(false);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
+  const [unitCandidates, setUnitCandidates] = useState<UnitCandidate[]>([]);
+  const [isCalculatingUnits, setIsCalculatingUnits] = useState(false);
   const [serviceLocation, setServiceLocation] = useState({
     address: country.center.address,
     coords: { lat: country.center.lat, lng: country.center.lng }
@@ -74,13 +81,18 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
   const ServiceIcon = serviceIcons[serviceType];
   const colors = serviceColors[serviceType];
   const unitIds = { ambulance: 'EMT-42', fire: 'FIRE-15', police: 'PD-89' };
+  const unitPrefixes = { ambulance: 'EMT', fire: 'FIRE', police: 'PD' };
   const serviceReports = reports.filter(r =>
     getReportServices(r).includes(serviceType) &&
     (!r.countryCode || r.countryCode === country.code)
   );
 
   const filteredReports = serviceReports.filter(r =>
-    (filter === 'all' ? true : getServiceStatus(r, serviceType) === filter)
+    filter === 'all'
+      ? true
+      : filter === 'responding'
+      ? ['responding', 'arrived'].includes(getServiceStatus(r, serviceType))
+      : getServiceStatus(r, serviceType) === filter
   ).sort((a, b) => b.injuryScale - a.injuryScale);
 
   const getInjuryScaleColor = (scale: number) => {
@@ -97,34 +109,108 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
     return 'MINOR';
   };
 
-  const handleRespond = (reportId: string) => {
-  const updatedReports = reports.map(r =>
-    r.id === reportId
-      ? updateUnitStatus(r, 'responding')
-      : r
-  );
+  const createAuditEntry = (
+    action: AuditEntry['action'],
+    label: string
+  ): AuditEntry => ({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    service: serviceType,
+    action,
+    label,
+    timestamp: new Date().toISOString()
+  });
 
-  setReports(updatedReports);
+  const calculateNearestUnits = async (report: EmergencyReport) => {
+    setIsCalculatingUnits(true);
+    const destination = report.coords ?? country.center;
+    const offsets = [
+      { lat: 0, lng: 0 },
+      { lat: 0.018, lng: -0.012 },
+      { lat: -0.014, lng: 0.016 }
+    ];
+    const candidates = await Promise.all(offsets.map(async (offset, index) => {
+      const origin = {
+        lat: serviceLocation.coords.lat + offset.lat,
+        lng: serviceLocation.coords.lng + offset.lng
+      };
+      const route = await fetchDrivingRoute(origin, destination);
+      return {
+        unit: `${unitPrefixes[serviceType]}-${String(42 + index).padStart(2, '0')}`,
+        assignedAt: new Date().toISOString(),
+        etaMinutes: route ? Math.max(1, Math.ceil(route.durationSeconds / 60)) : 99,
+        distanceKm: route ? route.distanceMeters / 1000 : 99,
+        origin
+      };
+    }));
+    candidates.sort((a, b) => a.etaMinutes - b.etaMinutes);
+    setUnitCandidates(candidates.map((candidate, index) => ({ ...candidate, recommended: index === 0 })));
+    setIsCalculatingUnits(false);
+  };
 
-  replaceReports(updatedReports);
-};
+  const openReport = (report: EmergencyReport) => {
+    setSelectedReport(report);
+    setUnitCandidates([]);
+    if (getServiceStatus(report, serviceType) === 'pending') void calculateNearestUnits(report);
+  };
+
+  const handleRespond = (reportId: string, assignment?: UnitAssignment) => {
+    const selectedAssignment = assignment ?? unitCandidates[0];
+    const updatedReports = reports.map(r =>
+      r.id === reportId
+        ? updateUnitStatus(r, 'responding', selectedAssignment, createAuditEntry(
+            'unit_dispatched',
+            `${selectedAssignment?.unit ?? unitIds[serviceType]} dispatched`
+          ))
+        : r
+    );
+    setReports(updatedReports);
+    replaceReports(updatedReports);
+    setSelectedReport(updatedReports.find(report => report.id === reportId) ?? null);
+    toast.success(`${selectedAssignment?.unit ?? unitIds[serviceType]} dispatched`);
+  };
 
   const handleResolve = (reportId: string) => {
     const updatedReports = reports.map(r =>
-      r.id === reportId ? updateUnitStatus(r, 'resolved') : r
+      r.id === reportId
+        ? updateUnitStatus(r, 'resolved', undefined, createAuditEntry('report_resolved', 'Report marked resolved'))
+        : r
     );
     setReports(updatedReports);
     replaceReports(updatedReports);
     setSelectedReport(null);
   };
 
-  const updateUnitStatus = (report: EmergencyReport, status: 'responding' | 'resolved') => {
+  const handleArrived = (reportId: string) => {
+    const updatedReports = reports.map(r =>
+      r.id === reportId
+        ? updateUnitStatus(r, 'arrived', undefined, createAuditEntry('unit_arrived', 'Assigned unit arrived on scene'))
+        : r
+    );
+    setReports(updatedReports);
+    replaceReports(updatedReports);
+    setSelectedReport(updatedReports.find(report => report.id === reportId) ?? null);
+  };
+
+  const updateUnitStatus = (
+    report: EmergencyReport,
+    status: 'responding' | 'arrived' | 'resolved',
+    assignment?: UnitAssignment,
+    auditEntry?: AuditEntry
+  ) => {
     const serviceStatuses = {
       ...createServiceStatuses(getReportServices(report), report.status),
       ...report.serviceStatuses,
       [serviceType]: status
     };
-    return { ...report, serviceStatuses, status: getOverallStatus(serviceStatuses, report.status) };
+    return {
+      ...report,
+      serviceStatuses,
+      status: getOverallStatus(serviceStatuses, report.status),
+      assignedUnits: assignment
+        ? { ...report.assignedUnits, [serviceType]: assignment }
+        : report.assignedUnits,
+      auditTrail: auditEntry ? [...(report.auditTrail ?? []), auditEntry] : report.auditTrail
+    };
   };
 
   const toggleGpsSharing = () => {
@@ -288,7 +374,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
           filteredReports.map((report) => (
             <div
               key={report.id}
-              onClick={() => setSelectedReport(report)}
+              onClick={() => openReport(report)}
               className="bg-gradient-to-br from-gray-800/80 to-gray-800/40 backdrop-blur-sm border border-gray-700 rounded-2xl overflow-hidden cursor-pointer hover:border-gray-600 hover:shadow-lg transition group"
             >
               <div className="p-4">
@@ -361,14 +447,25 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleRespond(report.id);
+                        openReport(report);
                       }}
                       className={`col-span-2 bg-gradient-to-r ${colors.gradient} text-white py-3 rounded-xl font-medium hover:opacity-90 transition shadow-lg`}
                     >
-                      Dispatch Unit
+                      Assign Nearest Unit
                     </button>
                   )}
                   {getServiceStatus(report, serviceType) === 'responding' && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleArrived(report.id);
+                      }}
+                      className="col-span-2 bg-gradient-to-r from-cyan-500 to-cyan-700 text-white py-3 rounded-xl font-medium hover:opacity-90 transition shadow-lg"
+                    >
+                      Mark Arrived
+                    </button>
+                  )}
+                  {getServiceStatus(report, serviceType) === 'arrived' && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -456,13 +553,55 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
 
   <div className="mt-4">
     <EmergencyMap
-      lat={-6.2088}
-      lng={106.8456}
+      lat={selectedReport.coords?.lat ?? country.center.lat}
+      lng={selectedReport.coords?.lng ?? country.center.lng}
       serviceType={serviceType}
     />
   </div>
 </div>
               </div>
+              {getServiceStatus(selectedReport, serviceType) === 'pending' && (
+                <div>
+                  <h3 className="mb-2 text-sm font-semibold text-gray-400">Nearest Unit Assignment</h3>
+                  {isCalculatingUnits ? (
+                    <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-4 text-sm text-blue-200">
+                      Calculating road distance and ETA...
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {unitCandidates.map(candidate => (
+                        <button
+                          key={candidate.unit}
+                          onClick={() => handleRespond(selectedReport.id, candidate)}
+                          className={`flex w-full items-center justify-between rounded-xl border p-3 text-left transition ${
+                            candidate.recommended
+                              ? 'border-green-500/50 bg-green-500/10 hover:bg-green-500/20'
+                              : 'border-gray-700 bg-gray-800 hover:bg-gray-700'
+                          }`}
+                        >
+                          <div>
+                            <p className="font-semibold">
+                              {candidate.unit}
+                              {candidate.recommended && <span className="ml-2 text-xs text-green-300">Recommended</span>}
+                            </p>
+                            <p className="mt-1 text-xs text-gray-400">{candidate.distanceKm.toFixed(1)} km road distance</p>
+                          </div>
+                          <span className="font-bold text-blue-300">{candidate.etaMinutes} min</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              {selectedReport.assignedUnits?.[serviceType] && (
+                <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-4">
+                  <h3 className="text-sm font-semibold text-blue-300">Assigned Unit</h3>
+                  <p className="mt-1 text-xl font-bold">{selectedReport.assignedUnits[serviceType]!.unit}</p>
+                  <p className="mt-1 text-xs text-gray-300">
+                    {selectedReport.assignedUnits[serviceType]!.distanceKm.toFixed(1)} km · Initial ETA {selectedReport.assignedUnits[serviceType]!.etaMinutes} min
+                  </p>
+                </div>
+              )}
               <div>
                 <h3 className="font-semibold text-gray-400 mb-2 text-sm">Priority Assessment</h3>
                 <div className={`text-3xl font-bold ${getInjuryScaleColor(selectedReport.injuryScale)}`}>
@@ -498,6 +637,19 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
                   ))}
                 </div>
               )}
+              {selectedReport.auditTrail?.length ? (
+                <div>
+                  <h3 className="mb-2 text-sm font-semibold text-gray-400">Audit Trail</h3>
+                  <div className="space-y-2">
+                    {selectedReport.auditTrail.map(entry => (
+                      <div key={entry.id} className="rounded-lg border border-gray-700 bg-gray-900/60 p-3">
+                        <p className="text-sm font-medium">{entry.label}</p>
+                        <p className="mt-1 text-xs text-gray-500">{new Date(entry.timestamp).toLocaleString()}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               <button
                 onClick={() => setSelectedReport(null)}
                 className="w-full rounded-lg bg-gray-700 py-3 font-medium text-white transition hover:bg-gray-600"
