@@ -58,12 +58,12 @@ export function EmergencyResultScreen({
 
   return (
     <div className="flex h-full flex-col bg-gradient-to-b from-gray-900 via-gray-900 to-black pb-16 text-white">
-      <div className="border-b border-green-500/30 bg-green-950/50 py-5 pl-20 pr-5 sm:pr-6">
+      <div className="border-b border-green-500/30 bg-green-950/50 px-5 py-5 sm:px-6">
         <h1 className="text-2xl font-bold">Alert Sent</h1>
         <p className="mt-1 text-sm text-green-300/80">Emergency services have received your report</p>
       </div>
 
-      <div className="app-scrollbar flex-1 overflow-y-auto p-5 sm:p-6">
+      <div className="app-scrollbar flex-1 overflow-y-auto p-4 sm:p-5">
         <div className="mx-auto max-w-xl space-y-4">
           <div className="rounded-2xl border border-green-500/30 bg-green-500/10 p-5 text-center">
             <p className="text-lg font-bold text-green-300">Help is being coordinated</p>
@@ -110,7 +110,7 @@ export function EmergencyResultScreen({
         </div>
       </div>
 
-      <div className="mb-16 border-t border-gray-800 bg-gray-900/50 p-6 backdrop-blur-sm">
+      <div className="border-t border-gray-800 bg-gray-900/50 p-4 backdrop-blur-sm">
         <button
           onClick={onViewDetails}
           className={`flex w-full items-center justify-center gap-3 rounded-2xl bg-gradient-to-r ${primaryConfig.gradient} py-4 text-lg font-bold text-white shadow-lg transition hover:opacity-90`}

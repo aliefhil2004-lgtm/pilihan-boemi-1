@@ -182,7 +182,8 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat }: Emergency
     <>
     <div className="flex flex-col h-full bg-gradient-to-b from-gray-900 via-gray-900 to-black text-white">
       {/* Header */}
-      <div className={`bg-gradient-to-r ${colors.gradient} p-5 pr-28 shadow-lg sm:p-6 sm:pr-56`}>
+      <div className={`bg-gradient-to-r ${colors.gradient} px-5 py-5 pr-28 shadow-lg sm:px-6 sm:py-6 sm:pr-56`}>
+        <div className="mx-auto max-w-6xl">
         <div className="flex items-center gap-4 mb-3">
           <div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm">
             <ServiceIcon className="w-8 h-8" />
@@ -208,10 +209,12 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat }: Emergency
             <p className="text-2xl font-bold">{serviceReports.filter(r => getServiceStatus(r, serviceType) === 'responding').length}</p>
           </div>
         </div>
+        </div>
       </div>
 
       {/* Filters */}
-      <div className="bg-gray-900/50 border-b border-gray-800 p-4">
+      <div className="border-b border-gray-800 bg-gray-900/50 p-4">
+        <div className="mx-auto max-w-6xl">
         <div className="mb-3 bg-gray-800/70 border border-gray-700 rounded-xl p-3 flex items-center gap-3">
           <MapPin className="w-5 h-5 text-green-400" />
           <div className="flex-1 min-w-0">
@@ -253,12 +256,14 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat }: Emergency
             ))}
           </div>
         </div>
+        </div>
       </div>
 
       {/* Reports List */}
-      <div className="app-scrollbar flex-1 overflow-y-auto p-4 space-y-4 sm:p-5">
+      <div className="app-scrollbar flex-1 overflow-y-auto p-4 sm:p-5">
+        <div className="mx-auto grid max-w-6xl gap-4 lg:grid-cols-2">
         {filteredReports.length === 0 ? (
-          <div className="text-center py-20">
+          <div className="py-20 text-center lg:col-span-2">
             <AlertTriangle className="w-16 h-16 text-gray-700 mx-auto mb-4" />
             <p className="text-gray-500">No active reports</p>
           </div>
@@ -387,6 +392,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat }: Emergency
             </div>
           ))
         )}
+        </div>
       </div>
 
       {/* Detail Modal */}
@@ -448,10 +454,6 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat }: Emergency
                   ))}
                 </div>
               )}
-              <div>
-                <h3 className="font-semibold text-gray-400 mb-2 text-sm">Location</h3>
-                <p className="text-white font-mono">{selectedReport.location}</p>
-              </div>
               <button
                 onClick={() => setSelectedReport(null)}
                 className="w-full rounded-lg bg-gray-700 py-3 font-medium text-white transition hover:bg-gray-600"

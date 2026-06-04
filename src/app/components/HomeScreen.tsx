@@ -29,7 +29,7 @@ export function HomeScreen({ onEmergencyStart, onServiceSelect, currentLocation,
       </div>
 
       {/* Location Status */}
-      <div className="mx-5 mt-5 rounded-lg border border-gray-700/80 bg-gray-800/60 p-4 sm:mx-6">
+      <div className="mx-5 mt-4 rounded-xl border border-gray-700/80 bg-gray-800/60 p-4 sm:mx-6 sm:mt-5">
         <div className="flex items-center gap-3">
           <div className="rounded-lg bg-green-500/15 p-2">
             <MapPin className="w-5 h-5 text-green-400" />
@@ -49,14 +49,14 @@ export function HomeScreen({ onEmergencyStart, onServiceSelect, currentLocation,
       </div>
 
       {userRole === 'civilian' ? (
-        <div className="flex flex-1 flex-col justify-center px-5 py-6 sm:px-6">
+        <div className="flex flex-1 flex-col justify-center px-5 py-5 sm:px-6">
           <div className="mx-auto w-full max-w-sm text-center">
-            <div className="relative mx-auto mb-7 flex h-64 w-64 items-center justify-center">
-              <div className="absolute h-64 w-64 rounded-full border border-red-500/15 bg-red-500/5" />
-              <div className="absolute h-56 w-56 rounded-full border border-red-500/25 bg-red-500/5" />
+            <div className="relative mx-auto mb-6 flex h-60 w-60 items-center justify-center sm:h-64 sm:w-64">
+              <div className="absolute h-60 w-60 rounded-full border border-red-500/15 bg-red-500/5 sm:h-64 sm:w-64" />
+              <div className="absolute h-52 w-52 rounded-full border border-red-500/25 bg-red-500/5 sm:h-56 sm:w-56" />
               <button
                 onClick={onEmergencyStart}
-                className="relative flex h-48 w-48 flex-col items-center justify-center rounded-full border-4 border-red-400/40 bg-red-600 text-white shadow-2xl shadow-red-950/70 transition hover:bg-red-500 active:scale-95"
+                className="relative flex h-44 w-44 flex-col items-center justify-center rounded-full border-4 border-red-400/40 bg-red-600 text-white shadow-2xl shadow-red-950/70 transition hover:bg-red-500 active:scale-95 sm:h-48 sm:w-48"
               >
                 <AlertCircle className="mb-2 h-14 w-14" />
                 <span className="text-xl font-bold">Request Help</span>
@@ -64,11 +64,11 @@ export function HomeScreen({ onEmergencyStart, onServiceSelect, currentLocation,
               </button>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-lg border border-gray-800 bg-gray-900/60 p-3 text-left">
+              <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-3 text-left">
                 <p className="text-xs text-gray-500">National hotline</p>
                 <p className="mt-1 flex items-center gap-2 font-semibold text-red-300"><PhoneCall className="h-4 w-4" />112</p>
               </div>
-              <div className="rounded-lg border border-gray-800 bg-gray-900/60 p-3 text-left">
+              <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-3 text-left">
                 <p className="text-xs text-gray-500">Report status</p>
                 <p className="mt-1 flex items-center gap-2 font-semibold text-green-300"><Radio className="h-4 w-4" />Ready</p>
               </div>

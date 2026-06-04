@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Camera, MapPin, Send, Navigation, FileText, Upload, ScanSearch } from 'lucide-react';
+import { Camera, MapPin, Send, Navigation, FileText, Upload, ScanSearch, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface EmergencyReportScreenProps {
@@ -81,17 +81,17 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
 };
 
   return (
-    <div className="flex flex-col h-full bg-gradient-to-b from-gray-900 via-gray-900 to-black text-white pb-16">
+    <div className="flex h-full flex-col bg-gradient-to-b from-gray-900 via-gray-900 to-black pb-16 text-white">
       {/* Header */}
-      <div className="border-b border-gray-800 py-5 pl-20 pr-5 sm:pr-6">
-        <h1 className="text-2xl font-bold mb-1">Emergency Report</h1>
+      <div className="border-b border-gray-800 px-5 py-5 sm:px-6">
+        <h1 className="mb-1 text-2xl font-bold">Emergency Report</h1>
         <p className="text-sm text-gray-400">Provide details to help us respond faster</p>
       </div>
 
       {/* Content */}
-      <div className="app-scrollbar flex-1 overflow-y-auto p-5 space-y-4 sm:p-6">
+      <div className="app-scrollbar flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
         {/* GPS Location Card */}
-        <div className="rounded-lg border border-gray-700 bg-gray-800/60 p-5">
+        <div className="rounded-xl border border-gray-700/80 bg-gray-800/60 p-4 sm:p-5">
           <div className="flex items-start gap-3 mb-3">
             <div className="bg-green-500/20 p-2 rounded-lg">
               <MapPin className="w-5 h-5 text-green-400" />
@@ -139,7 +139,7 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
         </div>
 
         {/* Photo Upload Section */}
-        <div className="rounded-lg border border-gray-700 bg-gray-800/60 p-5">
+        <div className="rounded-xl border border-gray-700/80 bg-gray-800/60 p-4 sm:p-5">
           <div className="flex items-center gap-3 mb-4">
             <div className="bg-purple-500/20 p-2 rounded-lg">
               <Camera className="w-5 h-5 text-purple-400" />
@@ -157,14 +157,13 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
                 alt="Emergency"
                 className="w-full h-48 object-cover rounded-xl border border-gray-700"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent rounded-xl opacity-0 group-hover:opacity-100 transition flex items-end p-4">
-                <button
-                  onClick={() => setPhoto(null)}
-                  className="w-full bg-red-500/90 hover:bg-red-500 text-white py-2 rounded-lg font-medium transition"
-                >
-                  Remove Photo
-                </button>
-              </div>
+              <button
+                onClick={() => setPhoto(null)}
+                className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-black/70 text-white backdrop-blur-sm transition hover:bg-red-600"
+                aria-label="Remove photo"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
           ) : (
             <div>
@@ -188,7 +187,7 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
         </div>
 
         {/* Description Input */}
-        <div className="rounded-lg border border-gray-700 bg-gray-800/60 p-5">
+        <div className="rounded-xl border border-gray-700/80 bg-gray-800/60 p-4 sm:p-5">
           <div className="flex items-center gap-3 mb-4">
             <div className="bg-blue-500/20 p-2 rounded-lg">
               <FileText className="w-5 h-5 text-blue-400" />
@@ -218,7 +217,7 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
 
         {/* Assessment Indicator */}
         {(photo || description) && (
-          <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-4">
+          <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-4">
             <div className="flex items-start gap-3">
               <ScanSearch className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
               <div className="flex-1">
@@ -233,7 +232,7 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
       </div>
 
       {/* Submit Button */}
-      <div className="border-t border-gray-800 bg-gray-950/90 p-4 backdrop-blur-sm sm:p-5">
+      <div className="border-t border-gray-800 bg-gray-950/90 p-4 backdrop-blur-sm">
         <button
           onClick={handleSubmit}
           className="group flex w-full items-center justify-center gap-3 rounded-lg bg-red-600 py-3.5 font-bold text-white shadow-lg transition hover:bg-red-500 disabled:bg-gray-700 disabled:shadow-none"

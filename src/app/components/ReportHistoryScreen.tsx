@@ -54,7 +54,7 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack }: Re
 
   return (
     <div className="flex h-full flex-col bg-gradient-to-b from-gray-900 to-black pb-20 text-white">
-      <header className="border-b border-gray-800 py-5 pl-20 pr-5 sm:pr-6">
+      <header className="border-b border-gray-800 px-5 py-5 sm:px-6">
         <div className="flex items-center gap-3">
           <div>
             <h1 className="text-2xl font-bold">{selectedReport ? 'Report Details' : 'Report History'}</h1>
@@ -94,7 +94,7 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack }: Re
               <ArrowLeft className="h-4 w-4" /> Back to history
             </button>
 
-            <article className="rounded-lg border border-gray-700 bg-gray-800/70 p-5">
+            <article className="rounded-xl border border-gray-700/80 bg-gray-800/70 p-4 sm:p-5">
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
                   <h2 className="text-xl font-bold">{selectedReport.emergencyType ?? 'Emergency Report'}</h2>
@@ -147,11 +147,16 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack }: Re
 
         {!selectedReport && (
           <>
-        {reports.length === 0 && <p className="py-20 text-center text-gray-500">No reports yet</p>}
+        {reports.length === 0 && (
+          <div className="rounded-xl border border-dashed border-gray-700 bg-gray-900/40 px-5 py-16 text-center">
+            <p className="font-medium text-gray-300">No reports yet</p>
+            <p className="mt-1 text-sm text-gray-500">Submitted emergency reports will appear here.</p>
+          </div>
+        )}
         {reports.map(report => (
           <article
             key={report.id}
-            className={`relative rounded-lg border bg-gray-800/70 p-4 ${
+            className={`relative rounded-xl border bg-gray-800/70 p-4 ${
               selectedIds.includes(report.id) ? 'border-blue-500 ring-1 ring-blue-500/50' : 'border-gray-700'
             }`}
           >
