@@ -1,7 +1,7 @@
 const WORKFLOW_URL =
   'https://serverless.roboflow.com/aliefs-workspace-bemvh/workflows/emergency-severity-analyzer-1778770846609';
 
-export default async function handler(request, response) {
+module.exports = async function handler(request, response) {
   if (request.method !== 'POST') {
     response.setHeader('Allow', 'POST');
     response.statusCode = 405;
