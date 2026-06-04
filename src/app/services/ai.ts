@@ -7,6 +7,8 @@ export interface AIResult {
   type: string;
   severity: 'Critical' | 'High' | 'Medium' | 'Low';
   severityScore: number;
+  disasterScale?: number;
+  disasterLevel?: string;
   service: ServiceType;
   services: ServiceType[];
   indicators: string[];
@@ -34,6 +36,36 @@ const rules: Array<{
   indicator: string;
   keywords: string[];
 }> = [
+  {
+    service: 'fire', type: 'Tsunami', score: 10,
+    indicator: 'Tsunami impact or warning detected',
+    keywords: ['tsunami', 'gelombang besar', 'gelombang pasang']
+  },
+  {
+    service: 'fire', type: 'Volcanic Eruption', score: 9,
+    indicator: 'Volcanic eruption impact detected',
+    keywords: ['volcanic eruption', 'volcano eruption', 'gunung meletus', 'erupsi gunung', 'erupsi vulkanik']
+  },
+  {
+    service: 'fire', type: 'Earthquake', score: 8,
+    indicator: 'Earthquake impact detected',
+    keywords: ['earthquake', 'gempa bumi', 'gempa']
+  },
+  {
+    service: 'fire', type: 'Severe Storm', score: 8,
+    indicator: 'Severe storm impact detected',
+    keywords: ['typhoon', 'hurricane', 'cyclone', 'tornado', 'topan', 'puting beliung', 'badai besar']
+  },
+  {
+    service: 'fire', type: 'Landslide', score: 7,
+    indicator: 'Landslide impact detected',
+    keywords: ['landslide', 'tanah longsor', 'longsor']
+  },
+  {
+    service: 'fire', type: 'Flood', score: 6,
+    indicator: 'Flood impact detected',
+    keywords: ['flash flood', 'flood', 'banjir bandang', 'banjir']
+  },
   {
     service: 'fire', type: 'Fire Emergency', score: 9,
     indicator: 'Explosion or hazardous fire risk detected',
@@ -230,7 +262,7 @@ function detectRequiredServices(
   const lower = text.toLowerCase();
   const services = new Set<ServiceType>([primary]);
   const multiAgencyIncident =
-    /(train accident|train crash|railway accident|kecelakaan kereta|kereta anjlok|plane crash|pesawat jatuh|mass casualty|banyak korban|building collapse|gedung runtuh)/i;
+    /(train accident|train crash|railway accident|kecelakaan kereta|kereta anjlok|plane crash|pesawat jatuh|mass casualty|banyak korban|building collapse|gedung runtuh|tsunami|volcanic eruption|volcano eruption|gunung meletus|erupsi gunung|earthquake|gempa|typhoon|hurricane|cyclone|tornado|topan|puting beliung|landslide|longsor|flash flood|flood|banjir)/i;
 
   if (multiAgencyIncident.test(lower)) {
     services.add('ambulance');
@@ -247,6 +279,29 @@ function detectRequiredServices(
   });
 
   return [...services];
+}
+
+function getDisasterLevel(scale: number) {
+  if (scale >= 5) return 'Catastrophic';
+  if (scale >= 4) return 'Severe';
+  if (scale >= 3) return 'Major';
+  if (scale >= 2) return 'Significant';
+  return 'Localized';
+}
+
+function assessNaturalDisaster(text: string, severityScore: number) {
+  const isNaturalDisaster =
+    /(tsunami|volcanic eruption|volcano eruption|gunung meletus|erupsi gunung|erupsi vulkanik|earthquake|gempa|typhoon|hurricane|cyclone|tornado|topan|puting beliung|landslide|longsor|flash flood|flood|banjir)/i.test(text);
+
+  if (!isNaturalDisaster) return null;
+
+  const scale =
+    severityScore >= 10 ? 5 :
+    severityScore >= 8 ? 4 :
+    severityScore >= 6 ? 3 :
+    severityScore >= 4 ? 2 : 1;
+
+  return { scale, level: getDisasterLevel(scale) };
 }
 
 export async function analyzeEmergency(
@@ -308,18 +363,26 @@ export async function analyzeEmergency(
     ...(imageClassification?.indicators ?? []),
     ...(imageAnalysisFailed ? ['Photo uploaded, but image assessment was unavailable'] : [])
   ];
+  const assessmentText =
+    `${text} ${strongest.type} ${imageClassification?.type ?? ''} ${imageClassification?.indicators.join(' ') ?? ''}`;
+  const disaster = assessNaturalDisaster(assessmentText, score);
   const services = detectRequiredServices(
-    `${text} ${imageClassification?.type ?? ''} ${imageClassification?.indicators.join(' ') ?? ''}`,
+    assessmentText,
     strongest.service,
     score
   );
   if (services.length > 1) indicators.push('Multi-agency response required');
+  if (disaster) {
+    indicators.push(`Natural disaster impact: Level ${disaster.scale} - ${disaster.level}`);
+  }
 
   return {
     type: strongest.type,
     service: strongest.service,
     services,
     severityScore: score,
+    disasterScale: disaster?.scale,
+    disasterLevel: disaster?.level,
     severity: severityFromScore(score),
     indicators: [...new Set(indicators)],
     annotatedImage
