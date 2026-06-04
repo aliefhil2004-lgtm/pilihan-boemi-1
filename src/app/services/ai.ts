@@ -256,6 +256,7 @@ export async function analyzeEmergency(
   const textClassification = classifyText(text);
   let imageClassification: Classification | null = null;
   let annotatedImage: string | undefined;
+  let imageAnalysisFailed = false;
 
   if (photo) {
     const yoloDetections = await analyzeEmergencyWithYolo(photo);
@@ -292,6 +293,7 @@ export async function analyzeEmergency(
       }
     } catch (error) {
       console.error('ROBOFLOW ERROR:', error);
+      imageAnalysisFailed = true;
     }
   }
 
@@ -303,7 +305,8 @@ export async function analyzeEmergency(
   const score = Math.max(textClassification.score, imageClassification?.score ?? 0);
   const indicators = [
     ...textClassification.indicators,
-    ...(imageClassification?.indicators ?? [])
+    ...(imageClassification?.indicators ?? []),
+    ...(imageAnalysisFailed ? ['Photo uploaded, but visual AI analysis was unavailable'] : [])
   ];
   const services = detectRequiredServices(
     `${text} ${imageClassification?.type ?? ''} ${imageClassification?.indicators.join(' ') ?? ''}`,

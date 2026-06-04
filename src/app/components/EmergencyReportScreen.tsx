@@ -8,6 +8,28 @@ interface EmergencyReportScreenProps {
   defaultLocation?: string;
 }
 
+function preparePhotoForAnalysis(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Unable to read photo'));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error('Invalid image file'));
+      image.onload = () => {
+        const maxDimension = 1600;
+        const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(image.width * scale);
+        canvas.height = Math.round(image.height * scale);
+        canvas.getContext('2d')?.drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.82));
+      };
+      image.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyReportScreenProps) {
   const [photo, setPhoto] = useState<string | null>(null);
   const [description, setDescription] = useState('');
@@ -166,17 +188,18 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
     toast.success('Photo captured and ready for AI analysis');
   };
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPhoto(reader.result as string);
-        toast.success('Photo uploaded and ready for AI analysis');
-      };
-      reader.readAsDataURL(file);
-    }
     e.target.value = '';
+
+    if (file) {
+      try {
+        setPhoto(await preparePhotoForAnalysis(file));
+        toast.success('Photo uploaded and ready for AI analysis');
+      } catch {
+        toast.error('Unable to prepare this photo. Please choose another image.');
+      }
+    }
   };
 
   const handleSubmit = () => {
