@@ -6,6 +6,7 @@ import { publishLiveGps } from '../services/liveGps';
 import { LocationPicker } from './LocationPicker';
 import { createServiceStatuses, getOverallStatus, getReportServices, getServiceStatus, type ServiceType, type StoredEmergencyReport } from '../types/emergency';
 import { cleanupExpiredReports } from '../services/reportStorage';
+import type { AseanCountry } from '../config/asean';
 
 type EmergencyReport = Omit<StoredEmergencyReport, 'timestamp'> & {
   timestamp: Date;
@@ -14,18 +15,26 @@ type EmergencyReport = Omit<StoredEmergencyReport, 'timestamp'> & {
 interface EmergencyServiceDashboardProps {
   serviceType: ServiceType;
   onOpenChat: (reportId: string) => void;
+  country: AseanCountry;
 }
 
-export function EmergencyServiceDashboard({ serviceType, onOpenChat }: EmergencyServiceDashboardProps) {
+export function EmergencyServiceDashboard({ serviceType, onOpenChat, country }: EmergencyServiceDashboardProps) {
   const [reports, setReports] = useState<EmergencyReport[]>([]);
   const [selectedReport, setSelectedReport] = useState<EmergencyReport | null>(null);
   const [filter, setFilter] = useState<'all' | 'pending' | 'responding'>('pending');
   const [isSharingGps, setIsSharingGps] = useState(false);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [serviceLocation, setServiceLocation] = useState({
-    address: 'Jakarta, DKI Jakarta, Indonesia',
-    coords: { lat: -6.2088, lng: 106.8456 }
+    address: country.center.address,
+    coords: { lat: country.center.lat, lng: country.center.lng }
   });
+
+  useEffect(() => {
+    setServiceLocation({
+      address: country.center.address,
+      coords: { lat: country.center.lat, lng: country.center.lng }
+    });
+  }, [country]);
 
   useEffect(() => {
   const loadReports = () => {
@@ -64,7 +73,10 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat }: Emergency
   const ServiceIcon = serviceIcons[serviceType];
   const colors = serviceColors[serviceType];
   const unitIds = { ambulance: 'EMT-42', fire: 'FIRE-15', police: 'PD-89' };
-  const serviceReports = reports.filter(r => getReportServices(r).includes(serviceType));
+  const serviceReports = reports.filter(r =>
+    getReportServices(r).includes(serviceType) &&
+    (!r.countryCode || r.countryCode === country.code)
+  );
 
   const filteredReports = serviceReports.filter(r =>
     (filter === 'all' ? true : getServiceStatus(r, serviceType) === filter)
@@ -472,6 +484,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat }: Emergency
         currentLocation={serviceLocation.address}
         onLocationChange={handleServiceLocationChange}
         onClose={() => setShowLocationPicker(false)}
+        country={country}
       />
     )}
     </>

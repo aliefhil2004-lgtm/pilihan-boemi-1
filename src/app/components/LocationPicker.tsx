@@ -1,56 +1,36 @@
 import { useState, useEffect } from 'react';
 import { MapPin, Search, Navigation, X } from 'lucide-react';
 import { toast } from 'sonner';
+import type { AseanCountry } from '../config/asean';
 
 interface LocationPickerProps {
   currentLocation: string;
   onLocationChange: (location: string, coords: { lat: number; lng: number }) => void;
   onClose: () => void;
+  country: AseanCountry;
 }
 
-interface City {
-  name: string;
-  lat: number;
-  lng: number;
-  province: string;
-}
-
-const indonesiaCities: City[] = [
-  { name: 'Jakarta', lat: -6.2088, lng: 106.8456, province: 'DKI Jakarta' },
-  { name: 'Surabaya', lat: -7.2575, lng: 112.7521, province: 'East Java' },
-  { name: 'Bandung', lat: -6.9175, lng: 107.6191, province: 'West Java' },
-  { name: 'Medan', lat: 3.5952, lng: 98.6722, province: 'North Sumatra' },
-  { name: 'Semarang', lat: -6.9667, lng: 110.4167, province: 'Central Java' },
-  { name: 'Makassar', lat: -5.1477, lng: 119.4327, province: 'South Sulawesi' },
-  { name: 'Palembang', lat: -2.9761, lng: 104.7754, province: 'South Sumatra' },
-  { name: 'Tangerang', lat: -6.1783, lng: 106.6319, province: 'Banten' },
-  { name: 'Depok', lat: -6.4025, lng: 106.7942, province: 'West Java' },
-  { name: 'Bekasi', lat: -6.2349, lng: 106.9896, province: 'West Java' },
-  { name: 'Denpasar', lat: -8.6705, lng: 115.2126, province: 'Bali' },
-  { name: 'Yogyakarta', lat: -7.7956, lng: 110.3695, province: 'Yogyakarta' },
-];
-
-export function LocationPicker({ currentLocation, onLocationChange, onClose }: LocationPickerProps) {
+export function LocationPicker({ currentLocation, onLocationChange, onClose, country }: LocationPickerProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [filteredCities, setFilteredCities] = useState(indonesiaCities);
+  const [filteredCities, setFilteredCities] = useState(country.cities);
   const [customLat, setCustomLat] = useState('');
   const [customLng, setCustomLng] = useState('');
 
   useEffect(() => {
     if (searchQuery) {
-      const filtered = indonesiaCities.filter(
+      const filtered = country.cities.filter(
         city =>
           city.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          city.province.toLowerCase().includes(searchQuery.toLowerCase())
+          city.region.toLowerCase().includes(searchQuery.toLowerCase())
       );
       setFilteredCities(filtered);
     } else {
-      setFilteredCities(indonesiaCities);
+      setFilteredCities(country.cities);
     }
-  }, [searchQuery]);
+  }, [country, searchQuery]);
 
-  const handleCitySelect = (city: City) => {
-    onLocationChange(`${city.name}, ${city.province}, Indonesia`, { lat: city.lat, lng: city.lng });
+  const handleCitySelect = (city: AseanCountry['cities'][number]) => {
+    onLocationChange(`${city.name}, ${city.region}, ${country.name}`, { lat: city.lat, lng: city.lng });
     toast.success(`Location set to ${city.name}`);
     onClose();
   };
@@ -64,8 +44,8 @@ export function LocationPicker({ currentLocation, onLocationChange, onClose }: L
       return;
     }
 
-    if (lat < -11 || lat > 6 || lng < 95 || lng > 141) {
-      toast.error('Coordinates outside Indonesia');
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      toast.error('Coordinates are outside the valid global range');
       return;
     }
 
@@ -119,7 +99,7 @@ export function LocationPicker({ currentLocation, onLocationChange, onClose }: L
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search cities in Indonesia..."
+              placeholder={`Search cities in ${country.name}...`}
               className="w-full bg-gray-800 border border-gray-700 rounded-xl pl-12 pr-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
             />
           </div>
@@ -151,7 +131,7 @@ export function LocationPicker({ currentLocation, onLocationChange, onClose }: L
                 </div>
                 <div className="flex-1 text-left">
                   <p className="font-medium text-white">{city.name}</p>
-                  <p className="text-xs text-gray-400">{city.province}</p>
+                  <p className="text-xs text-gray-400">{city.region}</p>
                 </div>
                 <div className="text-xs text-gray-500">
                   {city.lat.toFixed(2)}, {city.lng.toFixed(2)}

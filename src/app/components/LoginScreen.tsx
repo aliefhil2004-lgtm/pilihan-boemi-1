@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
 import { User, Shield, Mail, Lock, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
+import type { AseanCountry } from '../config/asean';
 
 interface LoginScreenProps {
   onLogin: (role: 'civilian' | 'service', credentials: { email: string; password: string }) => void;
   onGoToRegister: () => void;
   forcedRole?: 'civilian' | 'service';
+  country?: AseanCountry;
 }
 
-export function LoginScreen({ onLogin, onGoToRegister, forcedRole }: LoginScreenProps) {
+export function LoginScreen({ onLogin, onGoToRegister, forcedRole, country }: LoginScreenProps) {
   const [selectedRole, setSelectedRole] = useState<'civilian' | 'service' | null>(forcedRole ?? null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -47,7 +49,7 @@ export function LoginScreen({ onLogin, onGoToRegister, forcedRole }: LoginScreen
         <p className="text-gray-400">
           {forcedRole === 'service'
             ? 'Emergency Service Response Portal'
-            : 'Indonesia Emergency Response System'}
+            : 'ASEAN Emergency Response System'}
         </p>
       </div>
 
@@ -205,7 +207,7 @@ export function LoginScreen({ onLogin, onGoToRegister, forcedRole }: LoginScreen
       {/* Footer */}
       <div className="p-6 text-center">
         <p className="text-xs text-gray-500">
-          Emergency Hotline: <span className="text-red-400 font-bold">112</span>
+          Emergency Hotline: <span className="text-red-400 font-bold">{country?.emergency.ambulance ?? 'Local emergency number'}</span>
         </p>
       </div>
     </div>

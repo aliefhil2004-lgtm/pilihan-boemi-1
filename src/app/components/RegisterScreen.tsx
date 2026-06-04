@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { User, Shield, Mail, Lock, MapPin, Camera, AlertCircle, IdCard } from 'lucide-react';
 import { toast } from 'sonner';
+import type { AseanCountry } from '../config/asean';
 
 interface RegisterScreenProps {
   onRegister: (role: 'civilian' | 'service', data: RegisterData) => void;
   onBackToLogin: () => void;
   forcedRole?: 'civilian' | 'service';
+  country?: AseanCountry;
 }
 
 interface RegisterData {
@@ -19,7 +21,7 @@ interface RegisterData {
   credentialPhoto?: string;
 }
 
-export function RegisterScreen({ onRegister, onBackToLogin, forcedRole }: RegisterScreenProps) {
+export function RegisterScreen({ onRegister, onBackToLogin, forcedRole, country }: RegisterScreenProps) {
   const [selectedRole, setSelectedRole] = useState<'civilian' | 'service' | null>(forcedRole ?? null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -101,7 +103,7 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole }: Regist
         <p className="text-gray-400 text-sm">
           {forcedRole === 'service'
             ? 'Emergency service account verification'
-            : 'Join EmergencyConnect Indonesia'}
+            : 'Join EmergencyConnect ASEAN'}
         </p>
       </div>
 
@@ -223,7 +225,7 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole }: Regist
                 type="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                placeholder="+62 812-3456-7890"
+                placeholder={country?.phonePlaceholder ?? '+Country code phone number'}
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
               />
             </div>

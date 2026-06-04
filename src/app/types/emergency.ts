@@ -16,6 +16,7 @@ export interface StoredEmergencyReport {
   serviceStatuses?: Partial<Record<ServiceType, ReportStatus>>;
   reporterPhone?: string;
   detectedIndicators?: string[];
+  countryCode?: string;
 }
 
 export function getReportServices(

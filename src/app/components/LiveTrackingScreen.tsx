@@ -13,6 +13,7 @@ interface LiveTrackingScreenProps {
   userLocation: { lat: number; lng: number };
   onOpenChat: () => void;
   onBack?: () => void;
+  emergencyNumber: string;
 }
 
 const serviceConfig = {
@@ -61,7 +62,7 @@ function ResponderRoute({ serviceType, userLocation }: { serviceType: ServiceTyp
   );
 }
 
-export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, onOpenChat, onBack }: LiveTrackingScreenProps) {
+export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, onOpenChat, onBack, emergencyNumber }: LiveTrackingScreenProps) {
   const [report, setReport] = useState<StoredEmergencyReport | null>(null);
   const [eta, setEta] = useState(7);
   const services = [...new Set(serviceTypes)];
@@ -173,7 +174,7 @@ export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, onOpe
       </main>
 
       <footer className="grid grid-cols-2 gap-3 border-t border-gray-800 p-4">
-        <button onClick={() => { toast.success('Calling emergency response'); window.location.href = 'tel:112'; }} className="flex items-center justify-center gap-2 rounded-xl bg-gray-800 py-4 hover:bg-gray-700">
+        <button onClick={() => { toast.success(`Calling emergency response at ${emergencyNumber}`); window.location.href = `tel:${emergencyNumber}`; }} className="flex items-center justify-center gap-2 rounded-xl bg-gray-800 py-4 hover:bg-gray-700">
           <Phone className="h-5 w-5" /> Call
         </button>
         <button onClick={onOpenChat} className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 py-4 hover:bg-blue-700">

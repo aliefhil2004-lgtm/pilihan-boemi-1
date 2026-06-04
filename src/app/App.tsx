@@ -13,10 +13,12 @@ import { ReportHistoryScreen } from './components/ReportHistoryScreen';
 import { ChatScreen } from './components/ChatScreen';
 import { Navigation } from './components/Navigation';
 import { LocationPicker } from './components/LocationPicker';
-import { ArrowLeft, LogOut, Flame } from 'lucide-react';
+import { CountryPicker } from './components/CountryPicker';
+import { ArrowLeft, LogOut, Flame, Globe2 } from 'lucide-react';
 import { analyzeEmergency } from './services/ai';
 import { createServiceStatuses, getReportServices, type ServiceType, type StoredEmergencyReport } from './types/emergency';
 import { cleanupExpiredReports, resetPreviousHistoryOnce, saveReport } from './services/reportStorage';
+import { getAseanCountry, type AseanCountryCode } from './config/asean';
 
 type Screen = 'login' | 'register' | 'home' | 'report' | 'processing' | 'result' | 'tracking' | 'service-dashboard' | 'fire-map' | 'history' | 'chat';
 type UserRole = 'civilian' | 'service' | null;
@@ -70,13 +72,21 @@ export default function App() {
   const [currentScreen, setCurrentScreen] = useState<Screen>('login');
   const [selectedService, setSelectedService] = useState<ServiceType>('ambulance');
   const [showLocationPicker, setShowLocationPicker] = useState(false);
+  const [showCountryPicker, setShowCountryPicker] = useState(false);
+  const [countryCode, setCountryCode] = useState<AseanCountryCode>(() =>
+    (localStorage.getItem('aseanCountry') as AseanCountryCode) || 'ID'
+  );
   const [chatReportId, setChatReportId] = useState<string | null>(null);
   const [chatReturnScreen, setChatReturnScreen] = useState<Screen>('history');
   const [historyReportId, setHistoryReportId] = useState<string | null>(null);
-  const [userLocation, setUserLocation] = useState<UserLocation>({
-    address: 'Jakarta, DKI Jakarta, Indonesia',
-    coords: { lat: -6.2088, lng: 106.8456 }
-  });
+  const country = getAseanCountry(countryCode);
+  const [userLocation, setUserLocation] = useState<UserLocation>(() => ({
+    address: getAseanCountry((localStorage.getItem('aseanCountry') as AseanCountryCode) || 'ID').center.address,
+    coords: {
+      lat: getAseanCountry((localStorage.getItem('aseanCountry') as AseanCountryCode) || 'ID').center.lat,
+      lng: getAseanCountry((localStorage.getItem('aseanCountry') as AseanCountryCode) || 'ID').center.lng
+    }
+  }));
   const [emergencyData, setEmergencyData] = useState<EmergencyData>({
     photo: null,
     description: '',
@@ -109,6 +119,17 @@ export default function App() {
 
   const handleLocationChange = (location: string, coords: { lat: number; lng: number }) => {
     setUserLocation({ address: location, coords });
+  };
+
+  const handleCountryChange = (code: AseanCountryCode) => {
+    const nextCountry = getAseanCountry(code);
+    localStorage.setItem('aseanCountry', code);
+    setCountryCode(code);
+    setUserLocation({
+      address: nextCountry.center.address,
+      coords: { lat: nextCountry.center.lat, lng: nextCountry.center.lng }
+    });
+    setShowCountryPicker(false);
   };
 
   const handleBack = () => {
@@ -201,6 +222,7 @@ const newReport: StoredEmergencyReport = {
       : 'minor',
   injuryScale: severityScore,
   detectedIndicators,
+  countryCode: country.code,
   timestamp: new Date(),
   status: 'pending'
 };
@@ -271,17 +293,33 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
     return (
       <div className={`app-shell flex flex-col ${portalRole === 'service' ? 'app-shell-service' : 'app-shell-civilian'}`}>
         <Toaster position="top-center" richColors />
+        <button
+          onClick={() => setShowCountryPicker(true)}
+          className="absolute right-4 top-4 z-50 flex items-center gap-2 rounded-lg border border-gray-700 bg-gray-800/90 px-3 py-2 text-sm text-white shadow-lg"
+        >
+          <Globe2 className="h-4 w-4 text-blue-400" />
+          {country.flag} {country.code}
+        </button>
         {currentScreen === 'register' ? (
           <RegisterScreen
             onRegister={handleRegister}
             onBackToLogin={() => setCurrentScreen('login')}
             forcedRole={portalRole}
+            country={country}
           />
         ) : (
           <LoginScreen
             onLogin={handleLogin}
             onGoToRegister={() => setCurrentScreen('register')}
             forcedRole={portalRole}
+            country={country}
+          />
+        )}
+        {showCountryPicker && (
+          <CountryPicker
+            currentCountry={countryCode}
+            onSelect={handleCountryChange}
+            onClose={() => setShowCountryPicker(false)}
           />
         )}
       </div>
@@ -335,6 +373,8 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
           onServiceSelect={handleServiceSelect}
           currentLocation={userLocation.address}
           onChangeLocation={() => setShowLocationPicker(true)}
+          country={country}
+          onChangeCountry={() => setShowCountryPicker(true)}
           userRole={userRole}
         />
       )}
@@ -378,11 +418,12 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
   userLocation={userLocation.coords}
   onOpenChat={() => emergencyData.id && handleOpenChat(emergencyData.id, 'tracking')}
   onBack={() => setCurrentScreen('history')}
+  emergencyNumber={country.emergency[selectedService]}
 />
       )}
 
       {currentScreen === 'service-dashboard' && (
-        <EmergencyServiceDashboard serviceType={selectedService} onOpenChat={reportId => handleOpenChat(reportId, 'service-dashboard')} />
+        <EmergencyServiceDashboard country={country} serviceType={selectedService} onOpenChat={reportId => handleOpenChat(reportId, 'service-dashboard')} />
       )}
 
       {currentScreen === 'fire-map' && (
@@ -419,6 +460,15 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
           currentLocation={userLocation.address}
           onLocationChange={handleLocationChange}
           onClose={() => setShowLocationPicker(false)}
+          country={country}
+        />
+      )}
+
+      {showCountryPicker && (
+        <CountryPicker
+          currentCountry={countryCode}
+          onSelect={handleCountryChange}
+          onClose={() => setShowCountryPicker(false)}
         />
       )}
     </div>
