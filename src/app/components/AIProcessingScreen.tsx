@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Sparkles, Image as ImageIcon, FileText, MapPin, Brain, Zap } from 'lucide-react';
+import { Image as ImageIcon, FileText, MapPin, ScanSearch, Radio } from 'lucide-react';
 
 interface AIProcessingScreenProps {
   photo: string | null;
@@ -14,9 +14,9 @@ export function AIProcessingScreen({ photo, description, onComplete }: AIProcess
   const steps = [
     { icon: ImageIcon, label: 'Analyzing emergency photo', duration: 800 },
     { icon: FileText, label: 'Processing incident description', duration: 700 },
-    { icon: Brain, label: 'Calculating severity scale (1-10)', duration: 900 },
+    { icon: ScanSearch, label: 'Calculating severity scale (1-10)', duration: 900 },
     { icon: MapPin, label: 'Determining priority level', duration: 600 },
-    { icon: Zap, label: 'Dispatching nearest units', duration: 500 }
+    { icon: Radio, label: 'Dispatching nearest units', duration: 500 }
   ];
 
   useEffect(() => {
@@ -56,7 +56,7 @@ export function AIProcessingScreen({ photo, description, onComplete }: AIProcess
 
   return (
     <div className="flex flex-col h-full bg-gradient-to-b from-gray-900 via-black to-gray-900 text-white items-center justify-center p-6 pb-20">
-      {/* Animated AI Core */}
+      {/* Animated assessment core */}
       <div className="relative mb-12">
         {/* Outer rotating rings */}
         <div className="absolute inset-0 flex items-center justify-center">
@@ -69,10 +69,10 @@ export function AIProcessingScreen({ photo, description, onComplete }: AIProcess
           <div className="w-48 h-48 border-2 border-pink-500/20 rounded-full animate-spin" style={{ animationDuration: '4s' }}></div>
         </div>
 
-        {/* Central AI icon */}
+        {/* Central assessment icon */}
         <div className="relative w-64 h-64 flex items-center justify-center">
           <div className="bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 p-12 rounded-full animate-pulse shadow-2xl shadow-purple-500/50">
-            <Brain className="w-20 h-20" />
+            <ScanSearch className="w-20 h-20" />
           </div>
         </div>
 
@@ -85,7 +85,7 @@ export function AIProcessingScreen({ photo, description, onComplete }: AIProcess
       {/* Status Text */}
       <div className="text-center mb-8">
         <h1 className="text-3xl font-bold mb-3 bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-          AI Analysis in Progress
+          Emergency Assessment in Progress
         </h1>
         <p className="text-gray-400">
           Analyzing emergency situation…

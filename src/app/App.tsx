@@ -40,6 +40,8 @@ interface RegisterData {
   password: string;
   name: string;
   phone: string;
+  identityType: 'national-id' | 'passport' | 'drivers-license';
+  identityNumber: string;
   serviceType?: 'ambulance' | 'fire' | 'police';
   credentialPhoto?: string;
 }
@@ -70,6 +72,7 @@ export default function App() {
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [chatReportId, setChatReportId] = useState<string | null>(null);
   const [chatReturnScreen, setChatReturnScreen] = useState<Screen>('history');
+  const [historyReportId, setHistoryReportId] = useState<string | null>(null);
   const [userLocation, setUserLocation] = useState<UserLocation>({
     address: 'Jakarta, DKI Jakarta, Indonesia',
     coords: { lat: -6.2088, lng: 106.8456 }
@@ -114,7 +117,7 @@ export default function App() {
     } else if (currentScreen === 'result') {
       setCurrentScreen('home');
     } else if (currentScreen === 'tracking') {
-      setCurrentScreen('result');
+      setCurrentScreen('history');
     } else if (currentScreen === 'service-dashboard' || currentScreen === 'fire-map') {
       setCurrentScreen('home');
     } else if (currentScreen === 'history') {
@@ -211,10 +214,6 @@ const handleProcessingComplete = () => {
   setCurrentScreen('result');
 };
 
-const handleStartTracking = () => {
-  setCurrentScreen('tracking');
-};
-
 const handleOpenChat = (reportId: string, returnScreen: Screen = currentScreen) => {
   setChatReportId(reportId);
   setChatReturnScreen(returnScreen);
@@ -222,6 +221,7 @@ const handleOpenChat = (reportId: string, returnScreen: Screen = currentScreen) 
 };
 
 const handleTrackReport = (report: StoredEmergencyReport) => {
+  setHistoryReportId(report.id);
   const services = getReportServices(report);
   setSelectedService(services[0]);
   setEmergencyData({
@@ -243,6 +243,7 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
     screen === 'report' ||
     screen === 'history'
   ) {
+    if (screen === 'history') setHistoryReportId(null);
     setCurrentScreen(screen);
   }
 };
@@ -354,8 +355,10 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
           location={emergencyData.location}
           detectedIndicators={emergencyData.detectedIndicators}
           annotatedImage={emergencyData.annotatedImage}
-          onStartTracking={handleStartTracking}
-          onOpenChat={() => emergencyData.id && handleOpenChat(emergencyData.id, 'result')}
+          onViewDetails={() => {
+            setHistoryReportId(emergencyData.id ?? null);
+            setCurrentScreen('history');
+          }}
         />
       )}
 
@@ -364,7 +367,7 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
   serviceTypes={emergencyData.services ?? [selectedService]}
   userLocation={userLocation.coords}
   onOpenChat={() => emergencyData.id && handleOpenChat(emergencyData.id, 'tracking')}
-  onBack={() => setCurrentScreen('result')}
+  onBack={() => setCurrentScreen('history')}
 />
       )}
 
@@ -378,6 +381,7 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
 
       {currentScreen === 'history' && (
         <ReportHistoryScreen
+          initialReportId={historyReportId}
           onOpenChat={reportId => handleOpenChat(reportId, 'history')}
           onTrack={handleTrackReport}
         />

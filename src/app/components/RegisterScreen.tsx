@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { User, Shield, Mail, Lock, MapPin, Upload, Camera, AlertCircle } from 'lucide-react';
+import { User, Shield, Mail, Lock, MapPin, Camera, AlertCircle, IdCard } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface RegisterScreenProps {
@@ -13,6 +13,8 @@ interface RegisterData {
   password: string;
   name: string;
   phone: string;
+  identityType: 'national-id' | 'passport' | 'drivers-license';
+  identityNumber: string;
   serviceType?: 'ambulance' | 'fire' | 'police';
   credentialPhoto?: string;
 }
@@ -24,6 +26,8 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole }: Regist
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [identityType, setIdentityType] = useState<'national-id' | 'passport' | 'drivers-license'>('national-id');
+  const [identityNumber, setIdentityNumber] = useState('');
   const [serviceType, setServiceType] = useState<'ambulance' | 'fire' | 'police'>('ambulance');
   const [credentialPhoto, setCredentialPhoto] = useState<string | null>(null);
 
@@ -49,7 +53,7 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole }: Regist
       return;
     }
 
-    if (!email || !password || !name || !phone) {
+    if (!email || !password || !name || !phone || !identityNumber) {
       toast.error('Please fill all required fields');
       return;
     }
@@ -74,6 +78,8 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole }: Regist
       password,
       name,
       phone,
+      identityType,
+      identityNumber,
       ...(selectedRole === 'service' && {
         serviceType,
         credentialPhoto: credentialPhoto || undefined
@@ -222,6 +228,31 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole }: Regist
               />
             </div>
 
+            <div>
+              <label className="block text-xs font-medium mb-1 text-gray-300">Identity Document *</label>
+              <div className="grid grid-cols-[0.9fr_1.4fr] gap-2">
+                <select
+                  value={identityType}
+                  onChange={(e) => setIdentityType(e.target.value as typeof identityType)}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="national-id">National ID</option>
+                  <option value="passport">Passport</option>
+                  <option value="drivers-license">Driver's License</option>
+                </select>
+                <div className="relative">
+                  <IdCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                  <input
+                    value={identityNumber}
+                    onChange={(e) => setIdentityNumber(e.target.value)}
+                    placeholder="Document number"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 pr-3 py-2.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+              <p className="mt-1 text-xs text-gray-500">Used only for international-standard account verification.</p>
+            </div>
+
             {/* Service Type (Emergency Service Only) */}
             {selectedRole === 'service' && (
               <div>
@@ -278,7 +309,6 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole }: Regist
                     <input
                       type="file"
                       accept="image/*"
-                      capture="environment"
                       onChange={handleCredentialUpload}
                       className="hidden"
                     />

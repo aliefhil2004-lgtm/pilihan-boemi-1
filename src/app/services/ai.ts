@@ -216,8 +216,8 @@ function classifyImage(assessment: ImageAssessment): Classification | null {
     service: match.service,
     score: Math.max(1, Math.min(10, Math.max(match.score, assessment.severityScore || 0))),
     indicators: [
-      `Image AI detected: ${assessment.incidentType}`,
-      ...(assessment.description ? [`Roboflow analysis: ${assessment.description}`] : [])
+      `Image assessment detected: ${assessment.incidentType}`,
+      ...(assessment.description ? [`Visual assessment: ${assessment.description}`] : [])
     ]
   };
 }
@@ -270,7 +270,7 @@ export async function analyzeEmergency(
         imageClassification = {
           ...yoloClassification,
           indicators: [
-            `YOLO detected: ${yoloDetections.map(detection => detection.class).join(', ')}`
+            `Image assessment detected: ${yoloDetections.map(detection => detection.class).join(', ')}`
           ]
         };
       }
@@ -306,7 +306,7 @@ export async function analyzeEmergency(
   const indicators = [
     ...textClassification.indicators,
     ...(imageClassification?.indicators ?? []),
-    ...(imageAnalysisFailed ? ['Photo uploaded, but visual AI analysis was unavailable'] : [])
+    ...(imageAnalysisFailed ? ['Photo uploaded, but image assessment was unavailable'] : [])
   ];
   const services = detectRequiredServices(
     `${text} ${imageClassification?.type ?? ''} ${imageClassification?.indicators.join(' ') ?? ''}`,

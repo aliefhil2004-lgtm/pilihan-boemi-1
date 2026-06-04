@@ -81,7 +81,7 @@ export function FireStreamPanel() {
         await videoRef.current.play();
       }
       setStatus('live');
-      toast.success('Roboflow fire stream connected');
+      toast.success('Incident stream connected');
     } catch (error) {
       console.error('ROBOFLOW RTSP ERROR:', error);
       setStatus('error');
@@ -123,12 +123,12 @@ export function FireStreamPanel() {
             {status !== 'live' && (
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-950 text-gray-500">
                 <Video className="mb-3 h-10 w-10" />
-                <p className="text-sm font-medium">{status === 'connecting' ? 'Connecting to Roboflow...' : 'Stream is offline'}</p>
+                <p className="text-sm font-medium">{status === 'connecting' ? 'Connecting to incident stream...' : 'Stream is offline'}</p>
               </div>
             )}
             <div className="absolute left-3 top-3 flex items-center gap-2 rounded-md bg-black/70 px-2.5 py-1.5 text-xs">
               <Radio className={`h-3.5 w-3.5 ${status === 'live' ? 'animate-pulse text-red-400' : 'text-gray-500'}`} />
-              {status === 'live' ? 'LIVE AI' : status.toUpperCase()}
+              {status === 'live' ? 'LIVE' : status.toUpperCase()}
             </div>
           </div>
 

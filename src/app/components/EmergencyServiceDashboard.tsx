@@ -442,7 +442,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat }: Emergency
               </div>
               {selectedReport.detectedIndicators && selectedReport.detectedIndicators.length > 0 && (
                 <div>
-                  <h3 className="font-semibold text-gray-400 mb-2 text-sm">AI Indicators</h3>
+                  <h3 className="font-semibold text-gray-400 mb-2 text-sm">Assessment Indicators</h3>
                   {selectedReport.detectedIndicators.map(indicator => (
                     <p key={indicator} className="text-sm text-gray-300">- {indicator}</p>
                   ))}

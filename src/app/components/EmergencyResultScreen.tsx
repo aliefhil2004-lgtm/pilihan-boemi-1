@@ -1,4 +1,4 @@
-import { Ambulance, Flame, Shield, MapPin, Clock, AlertTriangle, CheckCircle2, Navigation, MessageSquare } from 'lucide-react';
+import { Ambulance, Flame, Shield, MapPin, Clock, AlertTriangle, CheckCircle2, Navigation, History } from 'lucide-react';
 import type { ServiceType } from '../types/emergency';
 
 interface EmergencyResultScreenProps {
@@ -10,8 +10,7 @@ interface EmergencyResultScreenProps {
   location: string;
   detectedIndicators?: string[];
   annotatedImage?: string;
-  onStartTracking: () => void;
-  onOpenChat: () => void;
+  onViewDetails: () => void;
 }
 
 export function EmergencyResultScreen({
@@ -22,8 +21,7 @@ export function EmergencyResultScreen({
   location,
   detectedIndicators = [],
   annotatedImage,
-  onStartTracking,
-  onOpenChat
+  onViewDetails
 }: EmergencyResultScreenProps) {
   const openLocationMap = () => {
     window.open(
@@ -124,9 +122,6 @@ export function EmergencyResultScreen({
       {/* Success Header */}
       <div className="border-b border-green-500/30 bg-green-950/50 py-5 pl-20 pr-5 sm:pr-6">
         <div className="flex items-center gap-3 mb-2">
-          <div className="bg-green-500/20 p-2 rounded-full">
-            <CheckCircle2 className="w-6 h-6 text-green-400" />
-          </div>
           <h1 className="text-2xl font-bold">Alert Sent Successfully</h1>
         </div>
         <p className="text-sm text-green-300/80">Emergency services have been notified</p>
@@ -192,7 +187,7 @@ export function EmergencyResultScreen({
               </div>
             </div>
             <p className="text-xs text-gray-400 mt-2">
-              AI-analyzed severity: {priorityStyle.description}
+              Assessed severity: {priorityStyle.description}
             </p>
           </div>
         </div>
@@ -205,7 +200,7 @@ export function EmergencyResultScreen({
             </div>
             <div>
               <h3 className="font-semibold mb-1">Recommended Service</h3>
-              <p className="text-sm text-gray-400">Based on AI analysis</p>
+              <p className="text-sm text-gray-400">Based on the emergency assessment</p>
             </div>
           </div>
 
@@ -227,7 +222,7 @@ export function EmergencyResultScreen({
 
         {detectedIndicators.length > 0 && (
           <div className="bg-gradient-to-br from-gray-800/80 to-gray-800/40 border border-gray-700 rounded-2xl p-5">
-            <h3 className="font-semibold mb-3">AI Detection Indicators</h3>
+            <h3 className="font-semibold mb-3">Assessment Indicators</h3>
             <div className="space-y-2">
               {detectedIndicators.map(indicator => (
                 <p key={indicator} className="text-sm text-gray-300">
@@ -240,11 +235,11 @@ export function EmergencyResultScreen({
 
         {annotatedImage && (
           <div className="bg-gradient-to-br from-gray-800/80 to-gray-800/40 border border-purple-500/40 rounded-2xl p-5">
-            <h3 className="font-semibold mb-1">Roboflow Visual Analysis</h3>
-            <p className="text-xs text-gray-400 mb-3">Annotated image returned by the deployed workflow</p>
+            <h3 className="font-semibold mb-1">Image Assessment</h3>
+            <p className="text-xs text-gray-400 mb-3">Highlighted visual findings from the submitted photo</p>
             <img
               src={annotatedImage}
-              alt="Roboflow annotated emergency analysis"
+              alt="Emergency image assessment"
               className="w-full max-h-72 object-contain rounded-xl border border-gray-700 bg-black"
             />
           </div>
@@ -303,18 +298,13 @@ export function EmergencyResultScreen({
         </div>
       </div>
 
-      {/* Track Button */}
-      <div className="grid grid-cols-3 gap-3 p-6 border-t border-gray-800 bg-gray-900/50 backdrop-blur-sm">
-        <button onClick={onOpenChat} className="rounded-2xl bg-gray-800 px-3 text-white hover:bg-gray-700">
-          <MessageSquare className="mx-auto mb-1 h-5 w-5" />
-          <span className="text-xs">Chat</span>
-        </button>
+      <div className="p-6 border-t border-gray-800 bg-gray-900/50 backdrop-blur-sm">
         <button
-          onClick={onStartTracking}
-          className={`col-span-2 w-full bg-gradient-to-r ${config.gradient} hover:opacity-90 text-white py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 transition-all duration-300 shadow-lg group`}
+          onClick={onViewDetails}
+          className={`w-full bg-gradient-to-r ${config.gradient} hover:opacity-90 text-white py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 transition-all duration-300 shadow-lg`}
         >
-          <Navigation className="w-6 h-6 group-hover:rotate-45 transition-transform" />
-          Track Emergency Response
+          <History className="w-6 h-6" />
+          View Report Details
         </button>
       </div>
     </div>

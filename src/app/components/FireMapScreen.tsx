@@ -40,7 +40,7 @@ export function FireMapScreen({ userLocation, onBack }: FireMapScreenProps) {
           onClick={() => setView('stream')}
           className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${view === 'stream' ? 'bg-orange-600 text-white' : 'text-gray-400 hover:bg-gray-800'}`}
         >
-          <Video className="h-4 w-4" /> Live AI Stream
+          <Video className="h-4 w-4" /> Live Incident Stream
         </button>
       </div>
 
