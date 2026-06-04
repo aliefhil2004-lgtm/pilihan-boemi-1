@@ -2,15 +2,20 @@ import { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { getReportServices, type StoredEmergencyReport } from '../types/emergency';
+import type { PublicCctvCamera } from '../config/cctv';
 
 interface FireMapViewProps {
   userLocation: { lat: number; lng: number };
   reports: StoredEmergencyReport[];
+  cameras: PublicCctvCamera[];
+  onCameraSelect: (camera: PublicCctvCamera) => void;
 }
 
 export function FireMapView({
   userLocation,
   reports,
+  cameras,
+  onCameraSelect,
 }: FireMapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
 
@@ -87,10 +92,25 @@ export function FireMapView({
       bounds.extend([coords.lng, coords.lat]);
     });
 
-    if (reports.length) map.fitBounds(bounds, { padding: 60, maxZoom: 14 });
+    cameras.forEach(camera => {
+      const markerElement = document.createElement('button');
+      markerElement.type = 'button';
+      markerElement.title = `Open CCTV: ${camera.name}`;
+      markerElement.className = 'flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-emerald-500 text-sm shadow-lg';
+      markerElement.textContent = 'C';
+      markerElement.addEventListener('click', () => onCameraSelect(camera));
+
+      new maplibregl.Marker({ element: markerElement })
+        .setLngLat([camera.lng, camera.lat])
+        .setPopup(new maplibregl.Popup({ offset: 20 }).setText(`${camera.name} - OpenCCTV ${camera.feedType}`))
+        .addTo(map);
+      bounds.extend([camera.lng, camera.lat]);
+    });
+
+    if (reports.length || cameras.length) map.fitBounds(bounds, { padding: 60, maxZoom: 14 });
 
     return () => map.remove();
-  }, [reports, userLocation]);
+  }, [cameras, onCameraSelect, reports, userLocation]);
 
   return (
   <div
