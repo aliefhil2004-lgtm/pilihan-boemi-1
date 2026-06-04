@@ -34,7 +34,10 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState(defaultLocation || '');
   const [isLocating, setIsLocating] = useState(!defaultLocation);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     // Auto-detect location on mount if no default location
@@ -52,6 +55,56 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
       );
     }
   }, [defaultLocation]);
+
+  useEffect(() => {
+    return () => cameraStreamRef.current?.getTracks().forEach(track => track.stop());
+  }, []);
+
+  const closeCamera = () => {
+    cameraStreamRef.current?.getTracks().forEach(track => track.stop());
+    cameraStreamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+    setIsCameraOpen(false);
+  };
+
+  const openCamera = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      toast.error('Camera is not supported on this device');
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false
+      });
+      cameraStreamRef.current = stream;
+      setIsCameraOpen(true);
+      requestAnimationFrame(() => {
+        if (videoRef.current) videoRef.current.srcObject = stream;
+      });
+    } catch {
+      toast.error('Unable to open camera. Please allow camera access.');
+    }
+  };
+
+  const takePhoto = () => {
+    const video = videoRef.current;
+    if (!video?.videoWidth || !video.videoHeight) {
+      toast.error('Camera is still loading');
+      return;
+    }
+
+    const canvas = document.createElement('canvas');
+    const maxDimension = 1600;
+    const scale = Math.min(1, maxDimension / Math.max(video.videoWidth, video.videoHeight));
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+    canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
+    setPhoto(canvas.toDataURL('image/jpeg', 0.82));
+    closeCamera();
+    toast.success('Photo captured and ready for image assessment');
+  };
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -165,15 +218,45 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
                 <X className="h-4 w-4" />
               </button>
             </div>
+          ) : isCameraOpen ? (
+            <div className="space-y-3">
+              <div className="relative overflow-hidden rounded-xl border border-gray-700 bg-black">
+                <video ref={videoRef} autoPlay playsInline muted className="h-56 w-full object-cover" />
+                <button
+                  type="button"
+                  onClick={closeCamera}
+                  className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-black/70 text-white backdrop-blur-sm hover:bg-red-600"
+                  aria-label="Close camera"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={takePhoto}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-purple-600 py-3 text-sm font-semibold text-white transition hover:bg-purple-500"
+              >
+                <Camera className="h-4 w-4" />
+                Take Photo
+              </button>
+            </div>
           ) : (
-            <div>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={openCamera}
+                className="flex items-center justify-center gap-2 rounded-xl bg-purple-600 py-3 text-sm font-semibold text-white transition hover:bg-purple-500"
+              >
+                <Camera className="h-4 w-4" />
+                Open Camera
+              </button>
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-700 bg-gray-700 py-3 text-sm font-semibold text-white transition hover:bg-gray-600"
+                className="flex items-center justify-center gap-2 rounded-xl border border-gray-700 bg-gray-700 py-3 text-sm font-semibold text-white transition hover:bg-gray-600"
               >
-                <Upload className="w-4 h-4" />
-                Upload Emergency Photo
+                <Upload className="h-4 w-4" />
+                Upload Photo
               </button>
               <input
                 ref={fileInputRef}
