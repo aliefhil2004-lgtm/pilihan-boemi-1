@@ -144,6 +144,22 @@ export function EmergencyResultScreen({
           <div className="bg-gray-900/50 rounded-xl p-3 border border-gray-700/50">
             <p className="text-sm text-gray-300">{emergencyType}</p>
           </div>
+
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {recommendedServices.map(service => {
+              const responseConfig = serviceConfig[service];
+              const ResponseIcon = responseConfig.icon;
+              return (
+                <div
+                  key={service}
+                  className={`flex items-center gap-3 rounded-xl border ${responseConfig.border} ${responseConfig.bg} p-3`}
+                >
+                  <ResponseIcon className={`h-5 w-5 ${responseConfig.text}`} />
+                  <p className="font-semibold">{responseConfig.name}</p>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {/* Priority Level Card */}
@@ -189,34 +205,6 @@ export function EmergencyResultScreen({
             <p className="text-xs text-gray-400 mt-2">
               Assessed severity: {priorityStyle.description}
             </p>
-          </div>
-        </div>
-
-        {/* Recommended Service Card */}
-        <div className="bg-gradient-to-br from-gray-800/80 to-gray-800/40 backdrop-blur-sm border border-gray-700 rounded-2xl p-5">
-          <div className="flex items-start gap-3 mb-4">
-            <div className="bg-purple-500/20 p-2 rounded-lg">
-              <Navigation className="w-5 h-5 text-purple-400" />
-            </div>
-            <div>
-              <h3 className="font-semibold mb-1">Recommended Service</h3>
-              <p className="text-sm text-gray-400">Based on the emergency assessment</p>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            {recommendedServices.map(service => {
-              const responseConfig = serviceConfig[service];
-              const ResponseIcon = responseConfig.icon;
-              return (
-                <div key={service} className={`bg-gradient-to-r ${responseConfig.gradient} rounded-xl p-4`}>
-                  <div className="flex items-center gap-3">
-                    <ResponseIcon className="w-6 h-6" />
-                    <p className="font-bold text-lg">{responseConfig.name}</p>
-                  </div>
-                </div>
-              );
-            })}
           </div>
         </div>
 
