@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FireMapView } from './FireMapView';
 import { Ambulance, Flame, Shield, ArrowLeft, MapPinned, Video, ExternalLink, X } from 'lucide-react';
 import { cleanupExpiredReports } from '../services/reportStorage';
@@ -14,14 +14,20 @@ interface FireMapScreenProps {
 export function FireMapScreen({ userLocation, countryCode, onBack }: FireMapScreenProps) {
   const [reports, setReports] = useState<StoredEmergencyReport[]>([]);
   const [selectedCamera, setSelectedCamera] = useState<PublicCctvCamera | null>(null);
-  const cameras = countryCode === 'ID' ? indonesiaPublicCctv : [];
+  const cameras = useMemo(
+    () => countryCode === 'ID' ? indonesiaPublicCctv : [],
+    [countryCode]
+  );
 
   useEffect(() => {
     const refresh = () => {
-      setReports(
-        cleanupExpiredReports().filter(
-          report => report.status !== 'resolved' && (!report.countryCode || report.countryCode === countryCode)
-        )
+      const nextReports = cleanupExpiredReports().filter(
+        report => report.status !== 'resolved' && (!report.countryCode || report.countryCode === countryCode)
+      );
+      setReports(currentReports =>
+        JSON.stringify(currentReports) === JSON.stringify(nextReports)
+          ? currentReports
+          : nextReports
       );
     };
     refresh();
