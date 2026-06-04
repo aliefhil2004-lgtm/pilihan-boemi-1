@@ -1,7 +1,18 @@
 const WORKFLOW_URL =
   'https://serverless.roboflow.com/aliefs-workspace-bemvh/workflows/emergency-severity-analyzer-1778770846609';
 
-module.exports = async function handler(request, response) {
+type VercelRequest = {
+  method?: string;
+  body?: unknown;
+};
+
+type VercelResponse = {
+  statusCode: number;
+  setHeader(name: string, value: string): void;
+  end(body?: string): void;
+};
+
+export default async function handler(request: VercelRequest, response: VercelResponse) {
   if (request.method !== 'POST') {
     response.setHeader('Allow', 'POST');
     response.statusCode = 405;
@@ -21,7 +32,7 @@ module.exports = async function handler(request, response) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        ...requestBody,
+        ...(requestBody && typeof requestBody === 'object' ? requestBody : {}),
         api_key: process.env.ROBOFLOW_API_KEY
       })
     });

@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/roboflow.ts": {
+      "maxDuration": 60
+    }
+  }
+}
