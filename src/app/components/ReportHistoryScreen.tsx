@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, CheckSquare, Clock, Eye, MapPin, MessageSquare, Navigation, ShieldCheck, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Clock, Eye, MapPin, MessageSquare, Navigation, ShieldCheck, Trash2, X } from 'lucide-react';
 import { getReportServices, type StoredEmergencyReport } from '../types/emergency';
 import { cleanupExpiredReports, deleteReports } from '../services/reportStorage';
 
@@ -66,7 +66,7 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack }: Re
               onClick={() => isSelecting ? cancelSelection() : setIsSelecting(true)}
               className="ml-auto flex h-10 items-center justify-center gap-2 rounded-lg bg-gray-800 px-3 text-gray-200 hover:bg-gray-700"
             >
-              {isSelecting ? <X className="h-4 w-4" /> : <CheckSquare className="h-4 w-4" />}
+              {isSelecting && <X className="h-4 w-4" />}
               <span className="text-sm">{isSelecting ? 'Cancel' : 'Select'}</span>
             </button>
           )}
@@ -176,7 +176,7 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack }: Re
                   <span className={`flex h-6 w-6 items-center justify-center rounded border ${
                     selectedIds.includes(report.id) ? 'border-blue-400 bg-blue-500 text-white' : 'border-gray-500'
                   }`}>
-                    {selectedIds.includes(report.id) && <CheckSquare className="h-4 w-4" />}
+                    {selectedIds.includes(report.id) && <span className="h-2.5 w-2.5 rounded-full bg-white" />}
                   </span>
                 )}
               </div>
