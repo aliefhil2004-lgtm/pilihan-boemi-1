@@ -374,7 +374,6 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
           currentLocation={userLocation.address}
           onChangeLocation={() => setShowLocationPicker(true)}
           country={country}
-          onChangeCountry={() => setShowCountryPicker(true)}
           userRole={userRole}
         />
       )}

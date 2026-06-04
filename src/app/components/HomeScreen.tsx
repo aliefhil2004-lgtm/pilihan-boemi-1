@@ -1,4 +1,4 @@
-import { Ambulance, Flame, Shield, MapPin, AlertCircle, Edit, Radio, ArrowRight, PhoneCall, Globe2 } from 'lucide-react';
+import { Ambulance, Flame, Shield, MapPin, AlertCircle, Edit, Radio, ArrowRight, PhoneCall } from 'lucide-react';
 import type { AseanCountry } from '../config/asean';
 
 interface HomeScreenProps {
@@ -7,11 +7,10 @@ interface HomeScreenProps {
   currentLocation: string;
   onChangeLocation: () => void;
   country: AseanCountry;
-  onChangeCountry: () => void;
   userRole: 'civilian' | 'service';
 }
 
-export function HomeScreen({ onEmergencyStart, onServiceSelect, currentLocation, onChangeLocation, country, onChangeCountry, userRole }: HomeScreenProps) {
+export function HomeScreen({ onEmergencyStart, onServiceSelect, currentLocation, onChangeLocation, country, userRole }: HomeScreenProps) {
   const services = [
     { id: 'ambulance' as const, name: 'Medical Command', detail: 'Ambulance and medical response', icon: Ambulance, color: 'text-blue-400', bg: 'bg-blue-500/15', border: 'hover:border-blue-500/60' },
     { id: 'fire' as const, name: 'Fire & Rescue', detail: 'Fire, rescue, and evacuation', icon: Flame, color: 'text-orange-400', bg: 'bg-orange-500/15', border: 'hover:border-orange-500/60' },
@@ -32,19 +31,7 @@ export function HomeScreen({ onEmergencyStart, onServiceSelect, currentLocation,
       </div>
 
       {/* Location Status */}
-      <div className="mx-5 mt-4 space-y-3 sm:mx-6 sm:mt-5">
-        <button
-          onClick={onChangeCountry}
-          className="flex w-full items-center gap-3 rounded-xl border border-blue-500/30 bg-blue-500/10 p-3 text-left transition hover:bg-blue-500/15"
-        >
-          <Globe2 className="h-5 w-5 text-blue-400" />
-          <div className="min-w-0 flex-1">
-            <p className="text-xs text-gray-400">Operating country</p>
-            <p className="truncate text-sm font-semibold">{country.flag} {country.name}</p>
-          </div>
-          <span className="text-xs text-blue-300">Change</span>
-        </button>
-      <div className="rounded-xl border border-gray-700/80 bg-gray-800/60 p-4">
+      <div className="mx-5 mt-4 rounded-xl border border-gray-700/80 bg-gray-800/60 p-4 sm:mx-6 sm:mt-5">
         <div className="flex items-center gap-3">
           <div className="rounded-lg bg-green-500/15 p-2">
             <MapPin className="w-5 h-5 text-green-400" />
@@ -61,7 +48,6 @@ export function HomeScreen({ onEmergencyStart, onServiceSelect, currentLocation,
             <Edit className="w-4 h-4 text-gray-300" />
           </button>
         </div>
-      </div>
       </div>
 
       {userRole === 'civilian' ? (
