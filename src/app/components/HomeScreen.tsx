@@ -1,5 +1,8 @@
-import { Ambulance, Flame, Shield, MapPin, AlertCircle, Edit, Radio, ArrowRight, PhoneCall } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Ambulance, Flame, Shield, MapPin, AlertCircle, Edit, Radio, ArrowRight, PhoneCall, AlertTriangle } from 'lucide-react';
 import type { AseanCountry } from '../config/asean';
+import type { StoredEmergencyReport } from '../types/emergency';
+import { cleanupExpiredReports } from '../services/reportStorage';
 
 interface HomeScreenProps {
   onEmergencyStart: () => void;
@@ -11,11 +14,37 @@ interface HomeScreenProps {
 }
 
 export function HomeScreen({ onEmergencyStart, onServiceSelect, currentLocation, onChangeLocation, country, userRole }: HomeScreenProps) {
+  const [highestPriorityReport, setHighestPriorityReport] = useState<StoredEmergencyReport | null>(null);
   const services = [
     { id: 'ambulance' as const, name: 'Medical Command', detail: 'Ambulance and medical response', icon: Ambulance, color: 'text-blue-400', bg: 'bg-blue-500/15', border: 'hover:border-blue-500/60' },
     { id: 'fire' as const, name: 'Fire & Rescue', detail: 'Fire, rescue, and evacuation', icon: Flame, color: 'text-orange-400', bg: 'bg-orange-500/15', border: 'hover:border-orange-500/60' },
     { id: 'police' as const, name: 'Police Command', detail: 'Security and public safety', icon: Shield, color: 'text-indigo-400', bg: 'bg-indigo-500/15', border: 'hover:border-indigo-500/60' }
   ];
+
+  useEffect(() => {
+    if (userRole !== 'service') return;
+
+    const refreshHighestPriority = () => {
+      const activeReports = cleanupExpiredReports()
+        .filter(report => report.status !== 'resolved' && (!report.countryCode || report.countryCode === country.code))
+        .sort((a, b) => b.injuryScale - a.injuryScale);
+      setHighestPriorityReport(activeReports[0] ?? null);
+    };
+
+    refreshHighestPriority();
+    const interval = setInterval(refreshHighestPriority, 2000);
+    window.addEventListener('emergency-reports-updated', refreshHighestPriority);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('emergency-reports-updated', refreshHighestPriority);
+    };
+  }, [country.code, userRole]);
+
+  const priorityLabel =
+    !highestPriorityReport ? null :
+    highestPriorityReport.injuryScale >= 8 ? 'CRITICAL' :
+    highestPriorityReport.injuryScale >= 5 ? 'SEVERE' :
+    highestPriorityReport.injuryScale >= 3 ? 'MODERATE' : 'MINOR';
 
   return (
     <div className="flex h-full flex-col bg-gradient-to-b from-gray-900 to-gray-950 pb-20 text-white">
@@ -80,6 +109,37 @@ export function HomeScreen({ onEmergencyStart, onServiceSelect, currentLocation,
       ) : (
         <div className="app-scrollbar flex-1 overflow-y-auto px-5 py-6 sm:px-6">
           <div className="mx-auto max-w-5xl">
+            <div className="mb-5 rounded-xl border border-red-500/35 bg-gradient-to-r from-red-500/15 to-orange-500/10 p-4">
+              <div className="flex items-start gap-3">
+                <div className="rounded-lg bg-red-500/20 p-2">
+                  <AlertTriangle className="h-5 w-5 text-red-300" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-red-300">Highest Priority Alert</p>
+                  {highestPriorityReport ? (
+                    <>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <p className="text-lg font-bold">{priorityLabel}</p>
+                        <span className="rounded-md bg-red-500/20 px-2 py-1 text-xs font-bold text-red-200">
+                          {highestPriorityReport.injuryScale}/10
+                        </span>
+                        {highestPriorityReport.disasterScale && (
+                          <span className="rounded-md bg-orange-500/20 px-2 py-1 text-xs font-bold text-orange-200">
+                            Disaster Level {highestPriorityReport.disasterScale}/5
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 truncate text-sm text-gray-200">
+                        {highestPriorityReport.emergencyType ?? highestPriorityReport.description ?? 'Emergency report'}
+                      </p>
+                      <p className="mt-1 truncate text-xs text-gray-400">{highestPriorityReport.location}</p>
+                    </>
+                  ) : (
+                    <p className="mt-1 text-sm text-gray-300">No active emergency reports.</p>
+                  )}
+                </div>
+              </div>
+            </div>
             <div className="mb-4 flex items-end justify-between">
               <div>
                 <h2 className="text-lg font-semibold">Command dashboards</h2>

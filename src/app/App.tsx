@@ -430,7 +430,12 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
       )}
 
       {currentScreen === 'service-dashboard' && (
-        <EmergencyServiceDashboard country={country} serviceType={selectedService} onOpenChat={reportId => handleOpenChat(reportId, 'service-dashboard')} />
+        <EmergencyServiceDashboard
+          country={country}
+          serviceType={selectedService}
+          onBack={() => setCurrentScreen('home')}
+          onOpenChat={reportId => handleOpenChat(reportId, 'service-dashboard')}
+        />
       )}
 
       {currentScreen === 'fire-map' && (

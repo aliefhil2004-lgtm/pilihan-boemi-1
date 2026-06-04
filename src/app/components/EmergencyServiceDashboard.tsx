@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Ambulance, Flame, Shield, Clock, MapPin, AlertTriangle, Phone, Navigation, Filter, Radio, Edit, MessageSquare, ImageOff } from 'lucide-react';
+import { Ambulance, Flame, Shield, Clock, MapPin, AlertTriangle, Phone, Navigation, Filter, Radio, Edit, MessageSquare, ImageOff, ArrowLeft } from 'lucide-react';
 import { EmergencyMap } from './EmergencyMap.tsx';
 import { toast } from 'sonner';
 import { publishLiveGps } from '../services/liveGps';
@@ -15,10 +15,11 @@ type EmergencyReport = Omit<StoredEmergencyReport, 'timestamp'> & {
 interface EmergencyServiceDashboardProps {
   serviceType: ServiceType;
   onOpenChat: (reportId: string) => void;
+  onBack: () => void;
   country: AseanCountry;
 }
 
-export function EmergencyServiceDashboard({ serviceType, onOpenChat, country }: EmergencyServiceDashboardProps) {
+export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, country }: EmergencyServiceDashboardProps) {
   const [reports, setReports] = useState<EmergencyReport[]>([]);
   const [selectedReport, setSelectedReport] = useState<EmergencyReport | null>(null);
   const [filter, setFilter] = useState<'all' | 'pending' | 'responding'>('pending');
@@ -198,6 +199,13 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, country }: 
       {/* Header */}
       <div className={`bg-gradient-to-r ${colors.gradient} px-5 py-5 pr-28 shadow-lg sm:px-6 sm:py-6 sm:pr-56`}>
         <div className="mx-auto max-w-6xl">
+        <button
+          onClick={onBack}
+          className="mb-4 flex items-center gap-2 rounded-lg border border-white/25 bg-black/15 px-3 py-2 text-sm font-semibold text-white transition hover:bg-black/25"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Response Center
+        </button>
         <div className="flex items-center gap-4 mb-3">
           <div className="bg-white/20 p-3 rounded-xl backdrop-blur-sm">
             <ServiceIcon className="w-8 h-8" />
