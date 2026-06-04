@@ -4,32 +4,42 @@ const WORKFLOW_URL =
 export default async function handler(request, response) {
   if (request.method !== 'POST') {
     response.setHeader('Allow', 'POST');
-    return response.status(405).json({ error: 'Method not allowed' });
+    response.statusCode = 405;
+    return response.end(JSON.stringify({ error: 'Method not allowed' }));
   }
 
   if (!process.env.ROBOFLOW_API_KEY) {
-    return response.status(500).json({ error: 'ROBOFLOW_API_KEY is not configured' });
+    response.statusCode = 500;
+    response.setHeader('Content-Type', 'application/json');
+    return response.end(JSON.stringify({ error: 'ROBOFLOW_API_KEY is not configured' }));
   }
 
   try {
+    const requestBody =
+      typeof request.body === 'string' ? JSON.parse(request.body) : request.body;
     const roboflowResponse = await fetch(WORKFLOW_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        ...request.body,
+        ...requestBody,
         api_key: process.env.ROBOFLOW_API_KEY
       })
     });
 
     const body = await roboflowResponse.text();
-    response.status(roboflowResponse.status);
+    response.statusCode = roboflowResponse.status;
     response.setHeader(
       'Content-Type',
       roboflowResponse.headers.get('content-type') || 'application/json'
     );
-    return response.send(body);
+    return response.end(body);
   } catch (error) {
     console.error('Roboflow workflow request failed:', error);
-    return response.status(502).json({ error: 'Unable to run Roboflow workflow' });
+    response.statusCode = 502;
+    response.setHeader('Content-Type', 'application/json');
+    return response.end(JSON.stringify({
+      error: 'Unable to run Roboflow workflow',
+      detail: error instanceof Error ? error.message : String(error)
+    }));
   }
 }
