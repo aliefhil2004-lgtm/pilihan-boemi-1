@@ -249,7 +249,16 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
 };
 
 
-  const showBackButton = currentScreen !== 'home' && currentScreen !== 'processing' && currentScreen !== 'service-dashboard' && currentScreen !== 'fire-map' && currentScreen !== 'chat' && currentScreen !== 'login' && currentScreen !== 'register';
+  const showBackButton =
+    currentScreen !== 'home' &&
+    currentScreen !== 'report' &&
+    currentScreen !== 'history' &&
+    currentScreen !== 'processing' &&
+    currentScreen !== 'service-dashboard' &&
+    currentScreen !== 'fire-map' &&
+    currentScreen !== 'chat' &&
+    currentScreen !== 'login' &&
+    currentScreen !== 'register';
   const showNavigation =
   userRole === 'civilian' &&
   currentScreen !== 'service-dashboard' &&
