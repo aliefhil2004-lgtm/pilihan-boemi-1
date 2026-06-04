@@ -108,30 +108,6 @@ export function LoginScreen({ onLogin, onGoToRegister, forcedRole, country }: Lo
             </button>
           )}
 
-          <div className={`mb-6 rounded-lg border p-5 ${
-            selectedRole === 'civilian'
-              ? 'bg-blue-500/10 border-blue-500/30'
-              : 'bg-orange-500/10 border-orange-500/30'
-          }`}>
-            <div className="flex items-center gap-3">
-              {selectedRole === 'civilian' ? (
-                <User className="w-6 h-6 text-blue-400" />
-              ) : (
-                <Shield className="w-6 h-6 text-orange-400" />
-              )}
-              <div>
-                <p className="font-bold">
-                  {selectedRole === 'civilian' ? 'Civilian Login' : 'Emergency Service Login'}
-                </p>
-                <p className="text-xs text-gray-400">
-                  {selectedRole === 'civilian'
-                    ? 'Access emergency reporting features'
-                    : 'Access emergency response dashboard'}
-                </p>
-              </div>
-            </div>
-          </div>
-
           <div className="space-y-4">
             {/* Email Input */}
             <div>
