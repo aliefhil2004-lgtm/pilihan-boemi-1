@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Camera, MapPin, Send, Navigation, FileText, Upload, ScanSearch, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { reverseGeocode } from '../services/geocoding';
 
 interface EmergencyReportScreenProps {
   onSubmit: (data: { photo: string | null; description: string; location: string }) => void;
@@ -43,8 +44,8 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
     // Auto-detect location on mount if no default location
     if (!defaultLocation && navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setLocation(`${position.coords.latitude.toFixed(4)}, ${position.coords.longitude.toFixed(4)}`);
+        async (position) => {
+          setLocation(await reverseGeocode(position.coords.latitude, position.coords.longitude));
           setIsLocating(false);
           toast.success('Location detected');
         },
@@ -151,7 +152,7 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
             </div>
             <div className="flex-1">
               <h3 className="font-semibold mb-1">Auto-detected Location</h3>
-              <p className="text-sm text-gray-400">GPS coordinates</p>
+              <p className="text-sm text-gray-400">Nearest detected address</p>
             </div>
             {isLocating && (
               <div className="flex items-center gap-2 text-xs text-blue-400">
@@ -162,7 +163,7 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
           </div>
 
           <div className="bg-gray-900/50 rounded-xl p-3 border border-gray-700/50">
-            <p className="text-sm font-mono text-green-400">
+            <p className="text-sm text-green-300">
               {location || 'Detecting location...'}
             </p>
           </div>
@@ -172,8 +173,8 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
               if (navigator.geolocation) {
                 setIsLocating(true);
                 navigator.geolocation.getCurrentPosition(
-                  (position) => {
-                    setLocation(`${position.coords.latitude.toFixed(4)}, ${position.coords.longitude.toFixed(4)}`);
+                  async (position) => {
+                    setLocation(await reverseGeocode(position.coords.latitude, position.coords.longitude, location || 'Current GPS location'));
                     setIsLocating(false);
                     toast.success('Location updated');
                   },

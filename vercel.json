@@ -2,6 +2,9 @@
   "functions": {
     "api/roboflow.ts": {
       "maxDuration": 60
+    },
+    "api/reverse-geocode.ts": {
+      "maxDuration": 15
     }
   },
   "rewrites": [

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { MapPin, Search, Navigation, X } from 'lucide-react';
 import { toast } from 'sonner';
 import type { AseanCountry } from '../config/asean';
+import { reverseGeocode } from '../services/geocoding';
 
 interface LocationPickerProps {
   currentLocation: string;
@@ -13,8 +14,6 @@ interface LocationPickerProps {
 export function LocationPicker({ currentLocation, onLocationChange, onClose, country }: LocationPickerProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredCities, setFilteredCities] = useState(country.cities);
-  const [customLat, setCustomLat] = useState('');
-  const [customLng, setCustomLng] = useState('');
 
   useEffect(() => {
     if (searchQuery) {
@@ -35,32 +34,14 @@ export function LocationPicker({ currentLocation, onLocationChange, onClose, cou
     onClose();
   };
 
-  const handleCustomLocation = () => {
-    const lat = parseFloat(customLat);
-    const lng = parseFloat(customLng);
-
-    if (isNaN(lat) || isNaN(lng)) {
-      toast.error('Invalid coordinates');
-      return;
-    }
-
-    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-      toast.error('Coordinates are outside the valid global range');
-      return;
-    }
-
-    onLocationChange(`Custom Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`, { lat, lng });
-    toast.success('Custom location set');
-    onClose();
-  };
-
   const handleCurrentLocation = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (position) => {
+        async (position) => {
           const lat = position.coords.latitude;
           const lng = position.coords.longitude;
-          onLocationChange(`GPS Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`, { lat, lng });
+          const address = await reverseGeocode(lat, lng, `Current location in ${country.name}`);
+          onLocationChange(address, { lat, lng });
           toast.success('Current location detected');
           onClose();
         },
@@ -133,46 +114,8 @@ export function LocationPicker({ currentLocation, onLocationChange, onClose, cou
                   <p className="font-medium text-white">{city.name}</p>
                   <p className="text-xs text-gray-400">{city.region}</p>
                 </div>
-                <div className="text-xs text-gray-500">
-                  {city.lat.toFixed(2)}, {city.lng.toFixed(2)}
-                </div>
               </button>
             ))}
-          </div>
-
-          {/* Custom Coordinates */}
-          <div className="mt-6 bg-gray-800/50 border border-gray-700 rounded-xl p-4">
-            <h3 className="text-sm font-medium text-white mb-3">Enter Custom Coordinates</h3>
-            <div className="grid grid-cols-2 gap-3 mb-3">
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">Latitude</label>
-                <input
-                  type="number"
-                  value={customLat}
-                  onChange={(e) => setCustomLat(e.target.value)}
-                  placeholder="-6.2088"
-                  step="0.0001"
-                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">Longitude</label>
-                <input
-                  type="number"
-                  value={customLng}
-                  onChange={(e) => setCustomLng(e.target.value)}
-                  placeholder="106.8456"
-                  step="0.0001"
-                  className="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-            <button
-              onClick={handleCustomLocation}
-              className="w-full bg-gray-700 hover:bg-gray-600 rounded-lg py-2 text-sm font-medium text-white transition"
-            >
-              Set Custom Location
-            </button>
           </div>
         </div>
       </div>

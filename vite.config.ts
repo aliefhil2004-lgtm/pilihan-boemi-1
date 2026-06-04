@@ -48,6 +48,37 @@ function liveGpsApi() {
   }
 }
 
+function reverseGeocodeApi() {
+  return {
+    name: 'reverse-geocode-api',
+    configureServer(server) {
+      server.middlewares.use('/api/reverse-geocode', async (req, res) => {
+        res.setHeader('Content-Type', 'application/json')
+        try {
+          const url = new URL(req.url ?? '', 'http://localhost')
+          const lat = url.searchParams.get('lat')
+          const lng = url.searchParams.get('lng')
+          if (!lat || !lng) {
+            res.statusCode = 400
+            res.end(JSON.stringify({ error: 'Latitude and longitude are required' }))
+            return
+          }
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}&zoom=18&addressdetails=1`,
+            { headers: { 'Accept-Language': 'en', 'User-Agent': 'EmergencyConnect-ASEAN/1.0' } },
+          )
+          const result = await response.json()
+          res.statusCode = response.status
+          res.end(JSON.stringify({ address: result.display_name }))
+        } catch {
+          res.statusCode = 502
+          res.end(JSON.stringify({ error: 'Unable to find address' }))
+        }
+      })
+    },
+  }
+}
+
 function yoloApiPlaceholder() {
   return {
     name: 'yolo-api-placeholder',
@@ -209,6 +240,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       liveGpsApi(),
+      reverseGeocodeApi(),
       yoloApiPlaceholder(),
       roboflowWorkflowApi(env.ROBOFLOW_API_KEY),
       roboflowWebrtcApi(env.ROBOFLOW_API_KEY),
