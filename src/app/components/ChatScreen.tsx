@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import { ArrowLeft, MessageSquare, Send } from 'lucide-react';
 import { getMessages, sendMessage, type ChatMessage } from '../services/chat';
 import type { ServiceType } from '../types/emergency';
+import { startChatSync } from '../services/firebaseSync';
 
 interface ChatScreenProps {
   reportId: string;
@@ -23,6 +24,7 @@ export function ChatScreen({ reportId, userRole, serviceType, onBack }: ChatScre
   useEffect(() => {
     const refresh = () => setMessages(getMessages(reportId));
     refresh();
+    const stopFirebaseSync = startChatSync(reportId);
     const interval = setInterval(refresh, 1000);
     window.addEventListener('storage', refresh);
     window.addEventListener('emergency-chat-updated', refresh);
@@ -30,6 +32,7 @@ export function ChatScreen({ reportId, userRole, serviceType, onBack }: ChatScre
       clearInterval(interval);
       window.removeEventListener('storage', refresh);
       window.removeEventListener('emergency-chat-updated', refresh);
+      stopFirebaseSync();
     };
   }, [reportId]);
 

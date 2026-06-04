@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { publishLiveGps } from '../services/liveGps';
 import { LocationPicker } from './LocationPicker';
 import { createServiceStatuses, getOverallStatus, getReportServices, getServiceStatus, type ServiceType, type StoredEmergencyReport } from '../types/emergency';
-import { cleanupExpiredReports } from '../services/reportStorage';
+import { cleanupExpiredReports, replaceReports } from '../services/reportStorage';
 import type { AseanCountry } from '../config/asean';
 
 type EmergencyReport = Omit<StoredEmergencyReport, 'timestamp'> & {
@@ -106,11 +106,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
 
   setReports(updatedReports);
 
-  localStorage.setItem(
-    'emergencyReports',
-    JSON.stringify(updatedReports)
-  );
-  window.dispatchEvent(new Event('emergency-reports-updated'));
+  replaceReports(updatedReports);
 };
 
   const handleResolve = (reportId: string) => {
@@ -118,8 +114,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
       r.id === reportId ? updateUnitStatus(r, 'resolved') : r
     );
     setReports(updatedReports);
-    localStorage.setItem('emergencyReports', JSON.stringify(updatedReports));
-    window.dispatchEvent(new Event('emergency-reports-updated'));
+    replaceReports(updatedReports);
     setSelectedReport(null);
   };
 

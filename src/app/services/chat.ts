@@ -28,4 +28,6 @@ export function sendMessage(message: Omit<ChatMessage, 'id' | 'timestamp'>) {
   chats[message.reportId] = [...(chats[message.reportId] ?? []), nextMessage];
   localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(chats));
   window.dispatchEvent(new Event('emergency-chat-updated'));
+  void syncMessageToFirebase(nextMessage);
 }
+import { syncMessageToFirebase } from './firebaseSync';

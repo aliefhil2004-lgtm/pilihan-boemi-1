@@ -1,4 +1,5 @@
 import type { ServiceType } from './ai';
+import { fetchLiveGpsFromFirebase, syncLiveGpsToFirebase } from './firebaseSync';
 
 export interface LiveGpsLocation {
   service: ServiceType;
@@ -19,6 +20,8 @@ export function readLiveGps(service: ServiceType): LiveGpsLocation | null {
 }
 
 export async function fetchLiveGps(service: ServiceType): Promise<LiveGpsLocation | null> {
+  const firebaseLocation = await fetchLiveGpsFromFirebase(service);
+  if (firebaseLocation) return firebaseLocation;
   try {
     const response = await fetch(`/api/live-gps/${service}`);
     if (!response.ok) return readLiveGps(service);
@@ -36,6 +39,7 @@ export function publishLiveGps(location: LiveGpsLocation) {
   locations[location.service] = location;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(locations));
   window.dispatchEvent(new Event('emergency-gps-updated'));
+  void syncLiveGpsToFirebase(location);
 
   fetch('/api/live-gps', {
     method: 'POST',

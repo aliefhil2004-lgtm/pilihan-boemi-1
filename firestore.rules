@@ -1,0 +1,15 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Prototype rules only. Replace with authenticated role-based rules before production.
+    match /reports/{reportId} {
+      allow read, create, update, delete: if true;
+    }
+    match /messages/{messageId} {
+      allow read, create: if true;
+    }
+    match /liveGps/{serviceId} {
+      allow read, write: if true;
+    }
+  }
+}

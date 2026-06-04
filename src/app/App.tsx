@@ -18,6 +18,7 @@ import { ArrowLeft, LogOut, Flame, Globe2 } from 'lucide-react';
 import { analyzeEmergency } from './services/ai';
 import { createServiceStatuses, getReportServices, type ServiceType, type StoredEmergencyReport } from './types/emergency';
 import { cleanupExpiredReports, resetPreviousHistoryOnce, saveReport } from './services/reportStorage';
+import { startReportSync } from './services/firebaseSync';
 import { getAseanCountry, type AseanCountryCode } from './config/asean';
 
 type Screen = 'login' | 'register' | 'home' | 'report' | 'processing' | 'result' | 'tracking' | 'service-dashboard' | 'fire-map' | 'history' | 'chat';
@@ -99,8 +100,12 @@ export default function App() {
   useEffect(() => {
     resetPreviousHistoryOnce();
     cleanupExpiredReports();
+    const stopFirebaseSync = startReportSync();
     const cleanupInterval = setInterval(cleanupExpiredReports, 60 * 1000);
-    return () => clearInterval(cleanupInterval);
+    return () => {
+      clearInterval(cleanupInterval);
+      stopFirebaseSync();
+    };
   }, []);
 
   const handleLogin = (role: UserRole, credentials: { email: string; password: string }) => {
