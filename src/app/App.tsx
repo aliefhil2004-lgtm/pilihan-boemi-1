@@ -431,7 +431,7 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
         <LiveTrackingScreen
   reportId={emergencyData.id ?? ''}
   serviceTypes={emergencyData.services ?? [selectedService]}
-  userLocation={userLocation.coords}
+  userLocation={emergencyData.coords ?? userLocation.coords}
   onOpenChat={() => emergencyData.id && handleOpenChat(emergencyData.id, 'tracking')}
   onBack={() => setCurrentScreen('history')}
   emergencyNumber={country.emergency[selectedService]}

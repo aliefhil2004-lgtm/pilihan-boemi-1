@@ -5,6 +5,9 @@
     },
     "api/reverse-geocode.ts": {
       "maxDuration": 15
+    },
+    "api/route.ts": {
+      "maxDuration": 15
     }
   },
   "rewrites": [

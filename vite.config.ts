@@ -79,6 +79,47 @@ function reverseGeocodeApi() {
   }
 }
 
+function routeApi() {
+  return {
+    name: 'route-api',
+    configureServer(server) {
+      server.middlewares.use('/api/route', async (req, res) => {
+        res.setHeader('Content-Type', 'application/json')
+        try {
+          const url = new URL(req.url ?? '', 'http://localhost')
+          const fromLat = url.searchParams.get('fromLat')
+          const fromLng = url.searchParams.get('fromLng')
+          const toLat = url.searchParams.get('toLat')
+          const toLng = url.searchParams.get('toLng')
+          if (![fromLat, fromLng, toLat, toLng].every(value => Number.isFinite(Number(value)))) {
+            res.statusCode = 400
+            res.end(JSON.stringify({ error: 'Valid origin and destination coordinates are required' }))
+            return
+          }
+          const routeResponse = await fetch(
+            `https://router.project-osrm.org/route/v1/driving/${encodeURIComponent(fromLng)},${encodeURIComponent(fromLat)};${encodeURIComponent(toLng)},${encodeURIComponent(toLat)}?overview=full&geometries=geojson`,
+          )
+          const result = await routeResponse.json()
+          const route = result.routes?.[0]
+          if (!route) {
+            res.statusCode = 404
+            res.end(JSON.stringify({ error: 'Route not found' }))
+            return
+          }
+          res.end(JSON.stringify({
+            distanceMeters: route.distance,
+            durationSeconds: route.duration,
+            coordinates: route.geometry.coordinates,
+          }))
+        } catch {
+          res.statusCode = 502
+          res.end(JSON.stringify({ error: 'Unable to calculate route' }))
+        }
+      })
+    },
+  }
+}
+
 function yoloApiPlaceholder() {
   return {
     name: 'yolo-api-placeholder',
@@ -241,6 +282,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       liveGpsApi(),
       reverseGeocodeApi(),
+      routeApi(),
       yoloApiPlaceholder(),
       roboflowWorkflowApi(env.ROBOFLOW_API_KEY),
       roboflowWebrtcApi(env.ROBOFLOW_API_KEY),

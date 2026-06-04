@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Ambulance, Flame, Shield, ArrowLeft, Clock, Phone, MessageSquare, CheckCircle2, Radio } from 'lucide-react';
 import { toast } from 'sonner';
 import { MapContainer, Marker, Polyline, Popup, TileLayer } from 'react-leaflet';
@@ -6,6 +6,7 @@ import { fetchLiveGps } from '../services/liveGps';
 import { civilianMarkerIcon, serviceMarkerIcons } from '../utils/mapMarkers';
 import { cleanupExpiredReports } from '../services/reportStorage';
 import { getServiceStatus, type ServiceType, type StoredEmergencyReport } from '../types/emergency';
+import { fetchDrivingRoute } from '../services/routing';
 
 interface LiveTrackingScreenProps {
   reportId: string;
@@ -22,27 +23,59 @@ const serviceConfig = {
   police: { icon: Shield, name: 'Police Unit', unit: 'PD-89', color: 'text-indigo-400' }
 };
 
-function ResponderRoute({ serviceType, userLocation }: { serviceType: ServiceType; userLocation: { lat: number; lng: number } }) {
+interface RouteSummary {
+  etaMinutes: number;
+  distanceKm: number;
+  liveGps: boolean;
+}
+
+function ResponderRoute({
+  serviceType,
+  userLocation,
+  onRouteUpdate
+}: {
+  serviceType: ServiceType;
+  userLocation: { lat: number; lng: number };
+  onRouteUpdate: (service: ServiceType, summary: RouteSummary) => void;
+}) {
   const index = ['ambulance', 'fire', 'police'].indexOf(serviceType) + 1;
   const [position, setPosition] = useState({
     lat: userLocation.lat - 0.0015 * index,
     lng: userLocation.lng - 0.0012 * index
   });
+  const positionRef = useRef(position);
+  const [routePositions, setRoutePositions] = useState<Array<[number, number]>>([]);
 
   useEffect(() => {
     const update = async () => {
       const gps = await fetchLiveGps(serviceType);
+      const liveGps = Boolean(gps && Date.now() - gps.updatedAt < 30000);
+      let nextPosition = positionRef.current;
       if (gps && Date.now() - gps.updatedAt < 30000) {
-        setPosition({ lat: gps.lat, lng: gps.lng });
+        nextPosition = { lat: gps.lat, lng: gps.lng };
       } else {
-        setPosition(previous => ({
-          lat: previous.lat + (userLocation.lat - previous.lat) * 0.04,
-          lng: previous.lng + (userLocation.lng - previous.lng) * 0.04
-        }));
+        nextPosition = {
+          lat: positionRef.current.lat + (userLocation.lat - positionRef.current.lat) * 0.04,
+          lng: positionRef.current.lng + (userLocation.lng - positionRef.current.lng) * 0.04
+        };
+      }
+      positionRef.current = nextPosition;
+      setPosition(nextPosition);
+
+      const route = await fetchDrivingRoute(nextPosition, userLocation);
+      if (route) {
+        setRoutePositions(route.coordinates.map(([lng, lat]) => [lat, lng]));
+        onRouteUpdate(serviceType, {
+          etaMinutes: Math.max(1, Math.ceil(route.durationSeconds / 60)),
+          distanceKm: route.distanceMeters / 1000,
+          liveGps
+        });
+      } else {
+        setRoutePositions([[nextPosition.lat, nextPosition.lng], [userLocation.lat, userLocation.lng]]);
       }
     };
     update();
-    const interval = setInterval(update, 1000);
+    const interval = setInterval(update, 10000);
     window.addEventListener('storage', update);
     window.addEventListener('emergency-gps-updated', update);
     return () => {
@@ -50,21 +83,21 @@ function ResponderRoute({ serviceType, userLocation }: { serviceType: ServiceTyp
       window.removeEventListener('storage', update);
       window.removeEventListener('emergency-gps-updated', update);
     };
-  }, [serviceType, userLocation.lat, userLocation.lng]);
+  }, [onRouteUpdate, serviceType, userLocation.lat, userLocation.lng]);
 
   return (
     <>
       <Marker position={[position.lat, position.lng]} icon={serviceMarkerIcons[serviceType]}>
         <Popup>{serviceConfig[serviceType].name} on the way</Popup>
       </Marker>
-      <Polyline positions={[[position.lat, position.lng], [userLocation.lat, userLocation.lng]]} />
+      <Polyline positions={routePositions} pathOptions={{ color: '#2563eb', weight: 5, opacity: 0.85 }} />
     </>
   );
 }
 
 export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, onOpenChat, onBack, emergencyNumber }: LiveTrackingScreenProps) {
   const [report, setReport] = useState<StoredEmergencyReport | null>(null);
-  const [eta, setEta] = useState(7);
+  const [routeSummaries, setRouteSummaries] = useState<Partial<Record<ServiceType, RouteSummary>>>({});
   const services = [...new Set(serviceTypes)];
   const activeServices = report
     ? services.filter(service => ['responding', 'resolved'].includes(getServiceStatus(report, service)))
@@ -92,11 +125,15 @@ export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, onOpe
     };
   }, [reportId]);
 
-  useEffect(() => {
-    if (!trackingActive) return;
-    const etaInterval = setInterval(() => setEta(previous => Math.max(previous - 1, 0)), 60000);
-    return () => clearInterval(etaInterval);
-  }, [trackingActive]);
+  const handleRouteUpdate = useCallback((service: ServiceType, summary: RouteSummary) => {
+    setRouteSummaries(current => ({ ...current, [service]: summary }));
+  }, []);
+  const activeRouteSummaries = activeServices
+    .map(service => routeSummaries[service])
+    .filter((summary): summary is RouteSummary => Boolean(summary));
+  const closestEta = activeRouteSummaries.length
+    ? Math.min(...activeRouteSummaries.map(summary => summary.etaMinutes))
+    : null;
 
   return (
     <div className="flex h-full flex-col bg-gray-900 pb-32 text-white">
@@ -118,7 +155,14 @@ export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, onOpe
         <MapContainer center={[userLocation.lat, userLocation.lng]} zoom={15} className="h-full w-full">
           <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
           <Marker position={[userLocation.lat, userLocation.lng]} icon={civilianMarkerIcon}><Popup>Civilian location</Popup></Marker>
-          {activeServices.map(service => <ResponderRoute key={service} serviceType={service} userLocation={userLocation} />)}
+          {activeServices.map(service => (
+            <ResponderRoute
+              key={service}
+              serviceType={service}
+              userLocation={userLocation}
+              onRouteUpdate={handleRouteUpdate}
+            />
+          ))}
         </MapContainer>
         <div className={`absolute right-4 top-4 z-[500] rounded-xl border px-3 py-2 text-xs ${
           trackingActive
@@ -132,7 +176,8 @@ export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, onOpe
         </div>
         {trackingActive && (
           <div className="absolute bottom-4 left-4 z-[500] rounded-2xl border border-gray-700 bg-gray-900/90 px-5 py-3">
-            <Clock className="mr-2 inline h-5 w-5 text-orange-400" /><strong className="text-orange-400">{eta} min ETA</strong>
+            <Clock className="mr-2 inline h-5 w-5 text-orange-400" />
+            <strong className="text-orange-400">{closestEta ? `${closestEta} min ETA` : 'Calculating route...'}</strong>
           </div>
         )}
       </div>
@@ -166,6 +211,12 @@ export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, onOpe
                 <div>
                   <p className="font-bold">{config.name}</p>
                   <p className="text-xs text-gray-400">Unit {config.unit} is responding</p>
+                  {routeSummaries[service] && (
+                    <p className="mt-1 text-xs text-blue-300">
+                      {routeSummaries[service]!.distanceKm.toFixed(1)} km · {routeSummaries[service]!.etaMinutes} min
+                      {!routeSummaries[service]!.liveGps && ' · simulated GPS'}
+                    </p>
+                  )}
                 </div>
               </div>
             );
