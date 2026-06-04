@@ -1,92 +1,88 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FireMapView } from './FireMapView';
-import { FireStreamPanel } from './FireStreamPanel';
-import { Flame, AlertTriangle, TrendingUp, ArrowLeft, Map, Video } from 'lucide-react';
+import { Ambulance, Flame, Shield, ArrowLeft, MapPinned } from 'lucide-react';
+import { cleanupExpiredReports } from '../services/reportStorage';
+import { getReportServices, type StoredEmergencyReport } from '../types/emergency';
 
 interface FireMapScreenProps {
   userLocation: { lat: number; lng: number };
+  countryCode: string;
   onBack: () => void;
 }
 
-export function FireMapScreen({ userLocation, onBack }: FireMapScreenProps) {
-  const [view, setView] = useState<'map' | 'stream'>('map');
+export function FireMapScreen({ userLocation, countryCode, onBack }: FireMapScreenProps) {
+  const [reports, setReports] = useState<StoredEmergencyReport[]>([]);
+
+  useEffect(() => {
+    const refresh = () => {
+      setReports(
+        cleanupExpiredReports().filter(
+          report => report.status !== 'resolved' && (!report.countryCode || report.countryCode === countryCode)
+        )
+      );
+    };
+    refresh();
+    const interval = setInterval(refresh, 2000);
+    window.addEventListener('emergency-reports-updated', refresh);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('emergency-reports-updated', refresh);
+    };
+  }, [countryCode]);
+
+  const countByService = (service: 'ambulance' | 'fire' | 'police') =>
+    reports.filter(report => getReportServices(report).includes(service)).length;
 
   return (
     <div className="flex flex-col h-full bg-gray-900 text-white">
       {/* Header */}
-      <div className="bg-gradient-to-br from-red-900/30 to-orange-900/20 border-b border-red-500/30 p-4">
+      <div className="border-b border-blue-500/30 bg-gradient-to-br from-blue-900/30 to-indigo-900/20 p-4">
         <div className="flex items-center gap-3 mb-2">
-          <button onClick={onBack} className="rounded-full bg-gray-900/50 p-2 hover:bg-gray-900/80" aria-label="Back to dashboard">
-            <ArrowLeft className="h-5 w-5" />
+          <button onClick={onBack} className="flex items-center gap-2 rounded-lg border border-gray-600 bg-gray-900/50 px-3 py-2 text-sm font-semibold hover:bg-gray-900/80" aria-label="Back to response center">
+            <ArrowLeft className="h-4 w-4" /> Back
           </button>
-          <div className="bg-red-500/20 p-2 rounded-lg">
-            <Flame className="w-5 h-5 text-red-400" />
+          <div className="bg-blue-500/20 p-2 rounded-lg">
+            <MapPinned className="w-5 h-5 text-blue-400" />
           </div>
           <div>
-            <h1 className="text-lg font-bold">Fire Detection Map</h1>
-            <p className="text-xs text-gray-400">Real-time fire hotspot monitoring</p>
+            <h1 className="text-lg font-bold">Emergency Response Map</h1>
+            <p className="text-xs text-gray-400">All active reported emergency locations</p>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-1 border-b border-gray-800 bg-gray-950 p-2">
-        <button
-          onClick={() => setView('map')}
-          className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${view === 'map' ? 'bg-orange-600 text-white' : 'text-gray-400 hover:bg-gray-800'}`}
-        >
-          <Map className="h-4 w-4" /> Hotspot Map
-        </button>
-        <button
-          onClick={() => setView('stream')}
-          className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold transition ${view === 'stream' ? 'bg-orange-600 text-white' : 'text-gray-400 hover:bg-gray-800'}`}
-        >
-          <Video className="h-4 w-4" /> Live Incident Stream
-        </button>
+      <div className="relative flex-1 min-h-72">
+        <FireMapView userLocation={userLocation} reports={reports} />
       </div>
 
-      {view === 'map' ? (
-        <>
-          <div className="relative flex-1 min-h-72">
-            <FireMapView userLocation={userLocation} />
-          </div>
-
-          <div className="bg-gray-900/50 border-t border-gray-800 p-4">
-            <div className="grid grid-cols-3 gap-3">
+      <div className="bg-gray-900/50 border-t border-gray-800 p-4">
+        <div className="grid grid-cols-3 gap-3">
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-3">
                 <div className="flex items-center gap-2 mb-1">
-                  <AlertTriangle className="w-4 h-4 text-red-400" />
-                  <p className="text-xs text-gray-400">High Risk</p>
+                  <Ambulance className="w-4 h-4 text-blue-400" />
+                  <p className="text-xs text-gray-400">Medical</p>
                 </div>
-                <p className="text-xl font-bold text-red-400">2</p>
+                <p className="text-xl font-bold text-blue-400">{countByService('ambulance')}</p>
               </div>
 
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-3">
                 <div className="flex items-center gap-2 mb-1">
                   <Flame className="w-4 h-4 text-orange-400" />
-                  <p className="text-xs text-gray-400">Active</p>
+                  <p className="text-xs text-gray-400">Fire</p>
                 </div>
-                <p className="text-xl font-bold text-orange-400">5</p>
+                <p className="text-xl font-bold text-orange-400">{countByService('fire')}</p>
               </div>
 
               <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-3">
                 <div className="flex items-center gap-2 mb-1">
-                  <TrendingUp className="w-4 h-4 text-yellow-400" />
-                  <p className="text-xs text-gray-400">24h Trend</p>
+                  <Shield className="w-4 h-4 text-indigo-400" />
+                  <p className="text-xs text-gray-400">Police</p>
                 </div>
-                <p className="text-xl font-bold text-yellow-400">+3</p>
+                <p className="text-xl font-bold text-indigo-400">{countByService('police')}</p>
               </div>
-            </div>
-
-            <div className="mt-3 bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
-              <p className="text-xs text-blue-300">
-                <span className="font-bold">Data Source:</span> NASA FIRMS provides near real-time active fire hotspot data from MODIS and VIIRS satellites.
-              </p>
-            </div>
-          </div>
-        </>
-      ) : (
-        <FireStreamPanel />
-      )}
+        </div>
+        <p className="mt-3 text-center text-xs text-gray-500">{reports.length} active reported locations displayed</p>
+      </div>
     </div>
   );
 }

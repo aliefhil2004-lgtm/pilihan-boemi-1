@@ -53,6 +53,7 @@ interface EmergencyData {
   photo: string | null;
   description: string;
   location: string;
+  coords?: { lat: number; lng: number };
   injuryScale?: number;
   disasterScale?: number;
   disasterLevel?: string;
@@ -190,6 +191,7 @@ const handleReportSubmit = async (data: {
 
   const reportData: EmergencyData = {
     ...data,
+    coords: userLocation.coords,
     injuryScale: severityScore,
     priority:
       aiResult.severity === 'Critical'
@@ -213,6 +215,7 @@ const newReport: StoredEmergencyReport = {
   photo: data.photo,
   description: data.description,
   location: data.location,
+  coords: userLocation.coords,
   service: aiResult.service,
   services: requiredServices,
   serviceStatuses: createServiceStatuses(requiredServices),
@@ -257,6 +260,7 @@ const handleTrackReport = (report: StoredEmergencyReport) => {
     photo: report.photo,
     description: report.description,
     location: report.location,
+    coords: report.coords,
     injuryScale: report.injuryScale,
     disasterScale: report.disasterScale,
     disasterLevel: report.disasterLevel,
@@ -341,15 +345,15 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
       {/* Top Actions */}
       {(currentScreen === 'home' || currentScreen === 'service-dashboard') && (
         <div className="absolute right-4 top-4 z-50 flex items-center gap-2 sm:right-6 sm:top-5">
-          {/* Fire Map Button - Only for Service role */}
+          {/* Emergency Map Button - Only for Service role */}
           {userRole === 'service' && (
             <button
               onClick={() => setCurrentScreen('fire-map')}
               className="flex h-10 items-center gap-2 rounded-lg border border-orange-500/40 bg-orange-500/15 px-3 text-orange-300 shadow-lg backdrop-blur-sm transition hover:bg-orange-500/25"
-              aria-label="Open fire map"
+              aria-label="Open emergency map"
             >
               <Flame className="w-4 h-4" />
-              <span className="hidden text-sm sm:inline">Fire Map</span>
+              <span className="hidden text-sm sm:inline">Emergency Map</span>
             </button>
           )}
 
@@ -439,7 +443,11 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
       )}
 
       {currentScreen === 'fire-map' && (
-        <FireMapScreen userLocation={userLocation.coords} onBack={() => setCurrentScreen('home')} />
+        <FireMapScreen
+          userLocation={userLocation.coords}
+          countryCode={country.code}
+          onBack={() => setCurrentScreen('home')}
+        />
       )}
 
       {currentScreen === 'history' && (

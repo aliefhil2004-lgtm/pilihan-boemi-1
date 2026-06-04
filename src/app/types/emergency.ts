@@ -6,6 +6,7 @@ export interface StoredEmergencyReport {
   photo: string | null;
   description: string;
   location: string;
+  coords?: { lat: number; lng: number };
   emergencyType?: string;
   severity: 'minor' | 'moderate' | 'severe' | 'critical';
   injuryScale: number;
