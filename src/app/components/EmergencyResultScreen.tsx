@@ -112,6 +112,15 @@ export function EmergencyResultScreen({
 
   const priorityStyle = priorityConfig[severityLevel];
   const PriorityIcon = priorityStyle.icon;
+  const orderedServices = [
+    recommendedService,
+    ...recommendedServices.filter(service => service !== recommendedService)
+  ];
+  const dispatchPriority = [
+    { label: 'Priority 1', description: 'Dispatch immediately', width: '100%', color: 'bg-red-500' },
+    { label: 'Priority 2', description: 'Supporting response', width: '72%', color: 'bg-orange-500' },
+    { label: 'Priority 3', description: 'Additional support', width: '45%', color: 'bg-blue-500' }
+  ];
 
   // Mock data
   const nearestUnit = `Unit ${config.unit}`;
@@ -145,17 +154,33 @@ export function EmergencyResultScreen({
             <p className="text-sm text-gray-300">{emergencyType}</p>
           </div>
 
-          <div className="mt-4 grid gap-2 sm:grid-cols-2">
-            {recommendedServices.map(service => {
+          <div className="mt-4 space-y-2">
+            {orderedServices.map((service, index) => {
               const responseConfig = serviceConfig[service];
               const ResponseIcon = responseConfig.icon;
+              const dispatch = dispatchPriority[index] ?? dispatchPriority[2];
               return (
                 <div
                   key={service}
-                  className={`flex items-center gap-3 rounded-xl border ${responseConfig.border} ${responseConfig.bg} p-3`}
+                  className={`rounded-xl border ${responseConfig.border} ${responseConfig.bg} p-3`}
                 >
-                  <ResponseIcon className={`h-5 w-5 ${responseConfig.text}`} />
-                  <p className="font-semibold">{responseConfig.name}</p>
+                  <div className="flex items-center gap-3">
+                    <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${responseConfig.bg}`}>
+                      <ResponseIcon className={`h-5 w-5 ${responseConfig.text}`} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-semibold">{responseConfig.name}</p>
+                        <span className="rounded-full bg-gray-950/50 px-2.5 py-1 text-xs font-bold text-white">
+                          {dispatch.label}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-xs text-gray-400">{dispatch.description}</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-950/50">
+                    <div className={`h-full rounded-full ${dispatch.color}`} style={{ width: dispatch.width }} />
+                  </div>
                 </div>
               );
             })}
