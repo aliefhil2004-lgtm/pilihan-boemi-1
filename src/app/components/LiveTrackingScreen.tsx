@@ -4,16 +4,16 @@ import { toast } from 'sonner';
 import { MapContainer, Marker, Polyline, Popup, TileLayer } from 'react-leaflet';
 import { fetchLiveGps } from '../services/liveGps';
 import { civilianMarkerIcon, serviceMarkerIcons } from '../utils/mapMarkers';
-import type { ServiceType } from '../types/emergency';
+import { cleanupExpiredReports } from '../services/reportStorage';
+import { getServiceStatus, type ServiceType, type StoredEmergencyReport } from '../types/emergency';
 
 interface LiveTrackingScreenProps {
+  reportId: string;
   serviceTypes: ServiceType[];
   userLocation: { lat: number; lng: number };
   onOpenChat: () => void;
   onBack?: () => void;
 }
-
-type TrackingStatus = 'received' | 'dispatched' | 'on_the_way' | 'arriving';
 
 const serviceConfig = {
   ambulance: { icon: Ambulance, name: 'Ambulance', unit: 'EMT-42', color: 'text-blue-400' },
@@ -61,51 +61,79 @@ function ResponderRoute({ serviceType, userLocation }: { serviceType: ServiceTyp
   );
 }
 
-export function LiveTrackingScreen({ serviceTypes, userLocation, onOpenChat, onBack }: LiveTrackingScreenProps) {
-  const [currentStatus, setCurrentStatus] = useState<TrackingStatus>('received');
+export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, onOpenChat, onBack }: LiveTrackingScreenProps) {
+  const [report, setReport] = useState<StoredEmergencyReport | null>(null);
   const [eta, setEta] = useState(7);
   const services = [...new Set(serviceTypes)];
-  const statusSteps: { status: TrackingStatus; label: string }[] = [
-    { status: 'received', label: 'Request Received' },
-    { status: 'dispatched', label: 'Units Dispatched' },
-    { status: 'on_the_way', label: 'On The Way' },
-    { status: 'arriving', label: 'Arriving Soon' }
+  const activeServices = report
+    ? services.filter(service => ['responding', 'resolved'].includes(getServiceStatus(report, service)))
+    : [];
+  const trackingActive = activeServices.length > 0;
+  const statusSteps = [
+    { label: 'Request Received', active: true },
+    { label: 'Accepted by Service', active: trackingActive },
+    { label: 'Units Dispatched', active: trackingActive },
+    { label: 'Live Tracking', active: trackingActive }
   ];
 
   useEffect(() => {
-    const timers = [
-      setTimeout(() => setCurrentStatus('dispatched'), 1500),
-      setTimeout(() => setCurrentStatus('on_the_way'), 3500),
-      setTimeout(() => setCurrentStatus('arriving'), 6000)
-    ];
-    const etaInterval = setInterval(() => setEta(previous => Math.max(previous - 1, 0)), 60000);
-    return () => {
-      timers.forEach(clearTimeout);
-      clearInterval(etaInterval);
+    const refresh = () => {
+      setReport(cleanupExpiredReports().find(item => item.id === reportId) ?? null);
     };
-  }, []);
+    refresh();
+    const interval = setInterval(refresh, 1500);
+    window.addEventListener('storage', refresh);
+    window.addEventListener('emergency-reports-updated', refresh);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', refresh);
+      window.removeEventListener('emergency-reports-updated', refresh);
+    };
+  }, [reportId]);
 
-  const currentStep = statusSteps.findIndex(step => step.status === currentStatus);
+  useEffect(() => {
+    if (!trackingActive) return;
+    const etaInterval = setInterval(() => setEta(previous => Math.max(previous - 1, 0)), 60000);
+    return () => clearInterval(etaInterval);
+  }, [trackingActive]);
 
   return (
     <div className="flex h-full flex-col bg-gray-900 pb-32 text-white">
-      <div className="relative h-[500px] overflow-hidden">
-        <MapContainer center={[userLocation.lat, userLocation.lng]} zoom={15} className="h-full w-full">
-          <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-          <Marker position={[userLocation.lat, userLocation.lng]} icon={civilianMarkerIcon}><Popup>Civilian location</Popup></Marker>
-          {services.map(service => <ResponderRoute key={service} serviceType={service} userLocation={userLocation} />)}
-        </MapContainer>
+      <header className="flex items-center gap-3 border-b border-gray-800 bg-gray-950 px-4 py-3">
         {onBack && (
-          <button onClick={onBack} className="absolute left-4 top-4 z-[1000] rounded-full border border-gray-700 bg-gray-900/90 p-3 shadow-lg hover:bg-gray-800" aria-label="Back">
+          <button onClick={onBack} className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-700 bg-gray-800 hover:bg-gray-700" aria-label="Back">
             <ArrowLeft className="h-5 w-5" />
           </button>
         )}
-        <div className="absolute right-4 top-4 z-10 rounded-xl border border-green-500 bg-green-900/90 px-3 py-2 text-xs text-green-300">
-          <Radio className="mr-2 inline h-4 w-4 animate-pulse" /> Live GPS for {services.length} unit{services.length > 1 ? 's' : ''}
+        <div>
+          <h1 className="font-bold">Emergency Response</h1>
+          <p className="text-xs text-gray-400">
+            {trackingActive ? 'Live responder locations' : 'Waiting for emergency service acceptance'}
+          </p>
         </div>
-        <div className="absolute bottom-4 left-4 z-10 rounded-2xl border border-gray-700 bg-gray-900/90 px-5 py-3">
-          <Clock className="mr-2 inline h-5 w-5 text-orange-400" /><strong className="text-orange-400">{eta} min ETA</strong>
+      </header>
+
+      <div className="relative h-[440px] overflow-hidden">
+        <MapContainer center={[userLocation.lat, userLocation.lng]} zoom={15} className="h-full w-full">
+          <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+          <Marker position={[userLocation.lat, userLocation.lng]} icon={civilianMarkerIcon}><Popup>Civilian location</Popup></Marker>
+          {activeServices.map(service => <ResponderRoute key={service} serviceType={service} userLocation={userLocation} />)}
+        </MapContainer>
+        <div className={`absolute right-4 top-4 z-[500] rounded-xl border px-3 py-2 text-xs ${
+          trackingActive
+            ? 'border-green-500 bg-green-900/90 text-green-300'
+            : 'border-yellow-500/60 bg-yellow-950/90 text-yellow-300'
+        }`}>
+          <Radio className={`mr-2 inline h-4 w-4 ${trackingActive ? 'animate-pulse' : ''}`} />
+          {trackingActive
+            ? `Live GPS for ${activeServices.length} unit${activeServices.length > 1 ? 's' : ''}`
+            : 'Tracking starts after acceptance'}
         </div>
+        {trackingActive && (
+          <div className="absolute bottom-4 left-4 z-[500] rounded-2xl border border-gray-700 bg-gray-900/90 px-5 py-3">
+            <Clock className="mr-2 inline h-5 w-5 text-orange-400" /><strong className="text-orange-400">{eta} min ETA</strong>
+          </div>
+        )}
       </div>
 
       <main className="flex-1 overflow-y-auto bg-gradient-to-b from-black to-gray-900">
@@ -113,8 +141,8 @@ export function LiveTrackingScreen({ serviceTypes, userLocation, onOpenChat, onB
           <h2 className="mb-3 font-bold">Live Status</h2>
           <div className="grid grid-cols-4 gap-2">
             {statusSteps.map((step, index) => (
-              <div key={step.status} className={`rounded-xl p-3 text-center text-xs ${index <= currentStep ? 'bg-green-500/20 text-green-300' : 'bg-gray-800 text-gray-500'}`}>
-                {index < currentStep && <CheckCircle2 className="mx-auto mb-1 h-4 w-4" />}
+              <div key={step.label} className={`rounded-xl p-3 text-center text-xs ${step.active ? 'bg-green-500/20 text-green-300' : 'bg-gray-800 text-gray-500'}`}>
+                {step.active && index > 0 && <CheckCircle2 className="mx-auto mb-1 h-4 w-4" />}
                 {step.label}
               </div>
             ))}
@@ -122,8 +150,13 @@ export function LiveTrackingScreen({ serviceTypes, userLocation, onOpenChat, onB
         </section>
 
         <section className="space-y-3 p-5">
-          <h2 className="font-bold">Dispatched Responders</h2>
-          {services.map(service => {
+          <h2 className="font-bold">{trackingActive ? 'Dispatched Responders' : 'Awaiting Response'}</h2>
+          {!trackingActive && (
+            <div className="rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-4 text-sm text-yellow-200">
+              Live tracking will begin automatically after an emergency service accepts and dispatches a unit.
+            </div>
+          )}
+          {activeServices.map(service => {
             const config = serviceConfig[service];
             const Icon = config.icon;
             return (

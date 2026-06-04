@@ -97,6 +97,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat }: Emergency
     'emergencyReports',
     JSON.stringify(updatedReports)
   );
+  window.dispatchEvent(new Event('emergency-reports-updated'));
 };
 
   const handleResolve = (reportId: string) => {
@@ -105,6 +106,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat }: Emergency
     );
     setReports(updatedReports);
     localStorage.setItem('emergencyReports', JSON.stringify(updatedReports));
+    window.dispatchEvent(new Event('emergency-reports-updated'));
     setSelectedReport(null);
   };
 

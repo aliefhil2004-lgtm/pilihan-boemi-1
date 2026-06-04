@@ -253,6 +253,7 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
     currentScreen !== 'home' &&
     currentScreen !== 'report' &&
     currentScreen !== 'history' &&
+    currentScreen !== 'tracking' &&
     currentScreen !== 'processing' &&
     currentScreen !== 'service-dashboard' &&
     currentScreen !== 'fire-map' &&
@@ -372,6 +373,7 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
 
       {currentScreen === 'tracking' && (
         <LiveTrackingScreen
+  reportId={emergencyData.id ?? ''}
   serviceTypes={emergencyData.services ?? [selectedService]}
   userLocation={userLocation.coords}
   onOpenChat={() => emergencyData.id && handleOpenChat(emergencyData.id, 'tracking')}

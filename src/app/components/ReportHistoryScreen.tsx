@@ -136,9 +136,11 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack }: Re
                 </button>
                 <button
                   onClick={() => onTrack(selectedReport)}
-                  className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-semibold hover:bg-blue-700"
+                  disabled={selectedReport.status === 'pending'}
+                  className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-semibold hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-700 disabled:text-gray-400"
                 >
-                  <Navigation className="h-4 w-4" /> Emergency Response
+                  <Navigation className="h-4 w-4" />
+                  {selectedReport.status === 'pending' ? 'Waiting for Acceptance' : 'Emergency Response'}
                 </button>
               </div>
             </article>
