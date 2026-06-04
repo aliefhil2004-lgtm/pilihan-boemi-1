@@ -109,7 +109,35 @@ export function HomeScreen({ onEmergencyStart, onServiceSelect, currentLocation,
       ) : (
         <div className="app-scrollbar flex-1 overflow-y-auto px-5 py-6 sm:px-6">
           <div className="mx-auto max-w-5xl">
-            <div className="mb-5 rounded-xl border border-red-500/35 bg-gradient-to-r from-red-500/15 to-orange-500/10 p-4">
+            <div className="mb-4 flex items-end justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">Command dashboards</h2>
+                <p className="mt-1 text-sm text-gray-400">Open the dashboard for your assigned unit.</p>
+              </div>
+              <p className="hidden text-xs text-gray-500 sm:block">Emergency hotline {country.emergency.ambulance}</p>
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              {services.map(service => {
+                const Icon = service.icon;
+                return (
+                  <button
+                    key={service.id}
+                    onClick={() => onServiceSelect(service.id)}
+                    className={`group flex items-center gap-4 rounded-lg border border-gray-700 bg-gray-800/60 p-5 text-left transition hover:bg-gray-800 ${service.border}`}
+                  >
+                    <div className={`rounded-lg p-3 ${service.bg}`}>
+                      <Icon className={`h-7 w-7 ${service.color}`} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold">{service.name}</p>
+                      <p className="mt-1 text-xs text-gray-400">{service.detail}</p>
+                    </div>
+                    <ArrowRight className="h-5 w-5 text-gray-600 transition group-hover:translate-x-0.5 group-hover:text-gray-300" />
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-5 rounded-xl border border-red-500/35 bg-gradient-to-r from-red-500/15 to-orange-500/10 p-4">
               <div className="flex items-start gap-3">
                 <div className="rounded-lg bg-red-500/20 p-2">
                   <AlertTriangle className="h-5 w-5 text-red-300" />
@@ -139,34 +167,6 @@ export function HomeScreen({ onEmergencyStart, onServiceSelect, currentLocation,
                   )}
                 </div>
               </div>
-            </div>
-            <div className="mb-4 flex items-end justify-between">
-              <div>
-                <h2 className="text-lg font-semibold">Command dashboards</h2>
-                <p className="mt-1 text-sm text-gray-400">Open the dashboard for your assigned unit.</p>
-              </div>
-              <p className="hidden text-xs text-gray-500 sm:block">Emergency hotline {country.emergency.ambulance}</p>
-            </div>
-            <div className="grid gap-3 md:grid-cols-3">
-              {services.map(service => {
-                const Icon = service.icon;
-                return (
-                  <button
-                    key={service.id}
-                    onClick={() => onServiceSelect(service.id)}
-                    className={`group flex items-center gap-4 rounded-lg border border-gray-700 bg-gray-800/60 p-5 text-left transition hover:bg-gray-800 ${service.border}`}
-                  >
-                    <div className={`rounded-lg p-3 ${service.bg}`}>
-                      <Icon className={`h-7 w-7 ${service.color}`} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold">{service.name}</p>
-                      <p className="mt-1 text-xs text-gray-400">{service.detail}</p>
-                    </div>
-                    <ArrowRight className="h-5 w-5 text-gray-600 transition group-hover:translate-x-0.5 group-hover:text-gray-300" />
-                  </button>
-                );
-              })}
             </div>
             <div className="mt-5 rounded-lg border border-blue-500/20 bg-blue-500/5 p-4">
               <p className="text-sm font-semibold text-blue-200">Operations status</p>
