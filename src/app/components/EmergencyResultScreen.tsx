@@ -311,7 +311,7 @@ export function EmergencyResultScreen({
         </div>
       </div>
 
-      <div className="p-6 border-t border-gray-800 bg-gray-900/50 backdrop-blur-sm">
+      <div className="mb-16 p-6 border-t border-gray-800 bg-gray-900/50 backdrop-blur-sm">
         <button
           onClick={onViewDetails}
           className={`w-full bg-gradient-to-r ${config.gradient} hover:opacity-90 text-white py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 transition-all duration-300 shadow-lg`}

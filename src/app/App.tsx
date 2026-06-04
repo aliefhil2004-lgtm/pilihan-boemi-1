@@ -254,8 +254,7 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
   userRole === 'civilian' &&
   currentScreen !== 'service-dashboard' &&
   currentScreen !== 'fire-map' &&
-  currentScreen !== 'processing' &&
-  currentScreen !== 'result';
+  currentScreen !== 'processing';
   
   // Show login or register screen if not logged in
   if (!userRole) {
