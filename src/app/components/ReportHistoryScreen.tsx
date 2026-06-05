@@ -122,28 +122,6 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack }: Re
                 <p>Severity scale: <span className="font-bold">{selectedReport.injuryScale}/10</span></p>
               </div>
 
-              {selectedReport.disasterScale && (
-                <div className="mt-5 rounded-xl border border-red-500/40 bg-red-500/10 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-red-300">Natural Disaster Impact</p>
-                      <p className="mt-1 font-bold text-white">{selectedReport.disasterLevel}</p>
-                    </div>
-                    <span className="rounded-lg bg-red-500/20 px-3 py-2 text-sm font-bold text-red-200">
-                      Level {selectedReport.disasterScale}/5
-                    </span>
-                  </div>
-                  <div className="mt-3 grid grid-cols-5 gap-1.5">
-                    {[1, 2, 3, 4, 5].map(level => (
-                      <div
-                        key={level}
-                        className={`h-2 rounded-full ${level <= selectedReport.disasterScale! ? 'bg-red-500' : 'bg-gray-700'}`}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {selectedReport.detectedIndicators?.length ? (
                 <div className="mt-5 rounded-xl border border-gray-700 bg-gray-900/50 p-4">
                   <h3 className="mb-2 font-semibold">Assessment Summary</h3>

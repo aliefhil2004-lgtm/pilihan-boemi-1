@@ -26,8 +26,6 @@ export interface StoredEmergencyReport {
   emergencyType?: string;
   severity: 'minor' | 'moderate' | 'severe' | 'critical';
   injuryScale: number;
-  disasterScale?: number;
-  disasterLevel?: string;
   timestamp: string | Date;
   status: ReportStatus;
   service?: ServiceType;

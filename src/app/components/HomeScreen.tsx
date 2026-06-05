@@ -151,11 +151,6 @@ export function HomeScreen({ onEmergencyStart, onServiceSelect, currentLocation,
                         <span className="rounded-md bg-red-500/20 px-2 py-1 text-xs font-bold text-red-200">
                           {highestPriorityReport.injuryScale}/10
                         </span>
-                        {highestPriorityReport.disasterScale && (
-                          <span className="rounded-md bg-orange-500/20 px-2 py-1 text-xs font-bold text-orange-200">
-                            Disaster Level {highestPriorityReport.disasterScale}/5
-                          </span>
-                        )}
                       </div>
                       <p className="mt-1 truncate text-sm text-gray-200">
                         {highestPriorityReport.emergencyType ?? highestPriorityReport.description ?? 'Emergency report'}

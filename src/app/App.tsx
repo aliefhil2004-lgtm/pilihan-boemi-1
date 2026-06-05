@@ -56,8 +56,6 @@ interface EmergencyData {
   location: string;
   coords?: { lat: number; lng: number };
   injuryScale?: number;
-  disasterScale?: number;
-  disasterLevel?: string;
   priority?: 'Critical' | 'Medium' | 'Low';
   emergencyType?: string;
   detectedIndicators?: string[];
@@ -208,8 +206,6 @@ const handleReportSubmit = async (data: {
     detectedIndicators,
     annotatedImage: aiResult.annotatedImage,
     id: reportId,
-    disasterScale: aiResult.disasterScale,
-    disasterLevel: aiResult.disasterLevel,
     services: requiredServices
   };
 
@@ -233,8 +229,6 @@ const newReport: StoredEmergencyReport = {
       ? 'moderate'
       : 'minor',
   injuryScale: severityScore,
-  disasterScale: aiResult.disasterScale,
-  disasterLevel: aiResult.disasterLevel,
   detectedIndicators,
   countryCode: country.code,
   timestamp: new Date(),
@@ -274,8 +268,6 @@ const handleTrackReport = (report: StoredEmergencyReport) => {
     location: report.location,
     coords: report.coords,
     injuryScale: report.injuryScale,
-    disasterScale: report.disasterScale,
-    disasterLevel: report.disasterLevel,
     emergencyType: report.emergencyType,
     detectedIndicators: report.detectedIndicators,
     services

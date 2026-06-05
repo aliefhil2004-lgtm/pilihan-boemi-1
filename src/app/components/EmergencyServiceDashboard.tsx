@@ -442,12 +442,6 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
                         />
                       </div>
                     </div>
-                    {report.disasterScale && (
-                      <div className="mt-3 flex items-center justify-between rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs">
-                        <span className="font-semibold text-red-200">Natural Disaster: {report.disasterLevel}</span>
-                        <span className="font-bold text-red-300">Level {report.disasterScale}/5</span>
-                      </div>
-                    )}
                   </div>
                 </div>
 
@@ -618,27 +612,6 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
                   {getInjuryScaleLabel(selectedReport.injuryScale)} - {selectedReport.injuryScale.toFixed(1)}/10
                 </div>
               </div>
-              {selectedReport.disasterScale && (
-                <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-sm font-semibold text-red-300">Natural Disaster Impact Scale</h3>
-                      <p className="mt-1 text-xl font-bold text-white">{selectedReport.disasterLevel}</p>
-                    </div>
-                    <span className="rounded-lg bg-red-500/20 px-3 py-2 font-bold text-red-200">
-                      Level {selectedReport.disasterScale}/5
-                    </span>
-                  </div>
-                  <div className="mt-3 grid grid-cols-5 gap-1.5">
-                    {[1, 2, 3, 4, 5].map(level => (
-                      <div
-                        key={level}
-                        className={`h-2 rounded-full ${level <= selectedReport.disasterScale! ? 'bg-red-500' : 'bg-gray-700'}`}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
               {selectedReport.detectedIndicators && selectedReport.detectedIndicators.length > 0 && (
                 <div>
                   <h3 className="font-semibold text-gray-400 mb-2 text-sm">Assessment Indicators</h3>

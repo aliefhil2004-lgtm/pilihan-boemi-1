@@ -8,8 +8,6 @@ export interface AIResult {
   type: string;
   severity: 'Critical' | 'High' | 'Medium' | 'Low';
   severityScore: number;
-  disasterScale?: number;
-  disasterLevel?: string;
   service: ServiceType;
   services: ServiceType[];
   indicators: string[];
@@ -282,29 +280,6 @@ function detectRequiredServices(
   return [...services];
 }
 
-function getDisasterLevel(scale: number) {
-  if (scale >= 5) return 'Catastrophic';
-  if (scale >= 4) return 'Severe';
-  if (scale >= 3) return 'Major';
-  if (scale >= 2) return 'Significant';
-  return 'Localized';
-}
-
-function assessNaturalDisaster(text: string, severityScore: number) {
-  const isNaturalDisaster =
-    /(tsunami|volcanic eruption|volcano eruption|gunung meletus|erupsi gunung|erupsi vulkanik|earthquake|gempa|typhoon|hurricane|cyclone|tornado|topan|puting beliung|landslide|longsor|flash flood|flood|banjir)/i.test(text);
-
-  if (!isNaturalDisaster) return null;
-
-  const scale =
-    severityScore >= 10 ? 5 :
-    severityScore >= 8 ? 4 :
-    severityScore >= 6 ? 3 :
-    severityScore >= 4 ? 2 : 1;
-
-  return { scale, level: getDisasterLevel(scale) };
-}
-
 export async function analyzeEmergency(
   text: string,
   photo?: string | null
@@ -370,24 +345,18 @@ export async function analyzeEmergency(
   ];
   const assessmentText =
     `${text} ${strongest.type} ${nlpClassification?.type ?? ''} ${nlpClassification?.indicators.join(' ') ?? ''} ${imageClassification?.type ?? ''} ${imageClassification?.indicators.join(' ') ?? ''}`;
-  const disaster = assessNaturalDisaster(assessmentText, score);
   const services = detectRequiredServices(
     assessmentText,
     strongest.service,
     score
   );
   if (services.length > 1) indicators.push('Multi-agency response required');
-  if (disaster) {
-    indicators.push(`Natural disaster impact: Level ${disaster.scale} - ${disaster.level}`);
-  }
 
   return {
     type: strongest.type,
     service: strongest.service,
     services,
     severityScore: score,
-    disasterScale: disaster?.scale,
-    disasterLevel: disaster?.level,
     severity: severityFromScore(score),
     indicators: [...new Set(indicators)],
     annotatedImage
