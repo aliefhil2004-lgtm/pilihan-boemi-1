@@ -147,6 +147,69 @@ function yoloApiPlaceholder() {
   }
 }
 
+function nlpApiPlaceholder(apiKey) {
+  return {
+    name: 'huggingface-nlp-api',
+    configureServer(server) {
+      server.middlewares.use('/api/nlp', (req, res, next) => {
+        if (req.method !== 'POST') {
+          next()
+          return
+        }
+
+        let body = ''
+        req.on('data', chunk => {
+          body += chunk
+        })
+        req.on('end', async () => {
+          res.setHeader('Content-Type', 'application/json')
+          if (!apiKey) {
+            res.end(JSON.stringify({ available: false, classifications: [] }))
+            return
+          }
+          try {
+            const payload = JSON.parse(body)
+            const hfResponse = await fetch('https://api-inference.huggingface.co/models/joeddav/xlm-roberta-large-xnli', {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                inputs: payload.text,
+                parameters: {
+                  candidate_labels: [
+                    'medical emergency',
+                    'fire rescue emergency',
+                    'police security emergency',
+                    'natural disaster',
+                    'lost property non emergency',
+                  ],
+                  multi_label: true,
+                },
+              }),
+            })
+            const result = await hfResponse.json()
+            if (!hfResponse.ok) {
+              res.end(JSON.stringify({ available: false, classifications: [], error: result.error ?? 'NLP unavailable' }))
+              return
+            }
+            res.end(JSON.stringify({
+              available: true,
+              classifications: result.labels?.map((label, index) => ({
+                label,
+                score: Number(result.scores?.[index] ?? 0),
+              })) ?? [],
+            }))
+          } catch {
+            res.end(JSON.stringify({ available: false, classifications: [] }))
+          }
+        })
+      })
+    },
+  }
+}
+
 function roboflowWorkflowApi(apiKey) {
   return {
     name: 'roboflow-workflow-api',
@@ -284,6 +347,7 @@ export default defineConfig(({ mode }) => {
       reverseGeocodeApi(),
       routeApi(),
       yoloApiPlaceholder(),
+      nlpApiPlaceholder(env.HUGGINGFACE_API_KEY),
       roboflowWorkflowApi(env.ROBOFLOW_API_KEY),
       roboflowWebrtcApi(env.ROBOFLOW_API_KEY),
       figmaAssetResolver(),

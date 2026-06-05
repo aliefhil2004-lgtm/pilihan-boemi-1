@@ -1,5 +1,6 @@
 import { analyzeEmergencyImage } from '../roboflow';
 import { analyzeEmergencyWithYolo } from './yolo';
+import { analyzeEmergencyTextWithNlp } from './nlp';
 import type { ServiceType } from '../types/emergency';
 export type { ServiceType } from '../types/emergency';
 
@@ -309,6 +310,7 @@ export async function analyzeEmergency(
   photo?: string | null
 ): Promise<AIResult> {
   const textClassification = classifyText(text);
+  const nlpClassification = await analyzeEmergencyTextWithNlp(text);
   let imageClassification: Classification | null = null;
   let annotatedImage: string | undefined;
   let imageAnalysisFailed = false;
@@ -356,15 +358,18 @@ export async function analyzeEmergency(
     imageClassification &&
     (imageClassification.score >= textClassification.score || textClassification.type === 'General Emergency')
       ? imageClassification
+      : nlpClassification && nlpClassification.score > textClassification.score
+      ? nlpClassification
       : textClassification;
-  const score = Math.max(textClassification.score, imageClassification?.score ?? 0);
+  const score = Math.max(textClassification.score, nlpClassification?.score ?? 0, imageClassification?.score ?? 0);
   const indicators = [
     ...textClassification.indicators,
+    ...(nlpClassification?.indicators ?? []),
     ...(imageClassification?.indicators ?? []),
     ...(imageAnalysisFailed ? ['Photo uploaded, but image assessment was unavailable'] : [])
   ];
   const assessmentText =
-    `${text} ${strongest.type} ${imageClassification?.type ?? ''} ${imageClassification?.indicators.join(' ') ?? ''}`;
+    `${text} ${strongest.type} ${nlpClassification?.type ?? ''} ${nlpClassification?.indicators.join(' ') ?? ''} ${imageClassification?.type ?? ''} ${imageClassification?.indicators.join(' ') ?? ''}`;
   const disaster = assessNaturalDisaster(assessmentText, score);
   const services = detectRequiredServices(
     assessmentText,

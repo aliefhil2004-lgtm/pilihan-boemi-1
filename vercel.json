@@ -11,6 +11,9 @@
     },
     "api/incidents.ts": {
       "maxDuration": 30
+    },
+    "api/nlp.ts": {
+      "maxDuration": 30
     }
   },
   "rewrites": [
