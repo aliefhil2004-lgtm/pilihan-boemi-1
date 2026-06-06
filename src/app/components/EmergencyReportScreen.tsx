@@ -2,10 +2,12 @@ import { useState, useEffect, useRef } from 'react';
 import { Camera, MapPin, Send, Navigation, FileText, Upload, ScanSearch, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { reverseGeocode } from '../services/geocoding';
+import { t, type Language } from '../i18n';
 
 interface EmergencyReportScreenProps {
   onSubmit: (data: { photo: string | null; description: string; location: string }) => void;
   defaultLocation?: string;
+  language: Language;
 }
 
 function preparePhotoForAnalysis(file: File): Promise<string> {
@@ -30,7 +32,7 @@ function preparePhotoForAnalysis(file: File): Promise<string> {
   });
 }
 
-export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyReportScreenProps) {
+export function EmergencyReportScreen({ onSubmit, defaultLocation, language }: EmergencyReportScreenProps) {
   const [photo, setPhoto] = useState<string | null>(null);
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState(defaultLocation || '');
@@ -39,6 +41,7 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
+  const tr = (key: Parameters<typeof t>[1]) => t(language, key);
 
   useEffect(() => {
     // Auto-detect location on mount if no default location
@@ -47,10 +50,10 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
         async (position) => {
           setLocation(await reverseGeocode(position.coords.latitude, position.coords.longitude));
           setIsLocating(false);
-          toast.success('Location detected');
+          toast.success(tr('report.locationDetected'));
         },
         () => {
-          setLocation('Location unavailable');
+          setLocation(tr('report.locationUnavailable'));
           setIsLocating(false);
         }
       );
@@ -70,7 +73,7 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
 
   const openCamera = async () => {
     if (!navigator.mediaDevices?.getUserMedia) {
-      toast.error('Camera is not supported on this device');
+      toast.error(tr('report.cameraUnsupported'));
       return;
     }
 
@@ -85,14 +88,14 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
         if (videoRef.current) videoRef.current.srcObject = stream;
       });
     } catch {
-      toast.error('Unable to open camera. Please allow camera access.');
+      toast.error(tr('report.cameraFailed'));
     }
   };
 
   const takePhoto = () => {
     const video = videoRef.current;
     if (!video?.videoWidth || !video.videoHeight) {
-      toast.error('Camera is still loading');
+      toast.error(tr('report.cameraLoading'));
       return;
     }
 
@@ -104,7 +107,7 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
     canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
     setPhoto(canvas.toDataURL('image/jpeg', 0.82));
     closeCamera();
-    toast.success('Photo captured and ready for image assessment');
+    toast.success(tr('report.photoCaptured'));
   };
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -114,22 +117,22 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
     if (file) {
       try {
         setPhoto(await preparePhotoForAnalysis(file));
-        toast.success('Photo uploaded and ready for image assessment');
+        toast.success(tr('report.photoUploaded'));
       } catch {
-        toast.error('Unable to prepare this photo. Please choose another image.');
+        toast.error(tr('report.photoFailed'));
       }
     }
   };
 
   const handleSubmit = () => {
   if (!photo && !description.trim()) {
-    toast.error('Please add a photo or description');
+    toast.error(tr('report.needPhotoOrDescription'));
     return;
   }
 
   onSubmit({
     photo,
-    description: description || 'Emergency photo report',
+    description: description || tr('report.defaultDescription'),
     location
   });
 };
@@ -138,8 +141,8 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
     <div className="flex h-full flex-col bg-gradient-to-b from-gray-900 via-gray-900 to-black pb-16 text-white">
       {/* Header */}
       <div className="border-b border-gray-800 px-5 py-5 sm:px-6">
-        <h1 className="mb-1 text-2xl font-bold">Emergency Report</h1>
-        <p className="text-sm text-gray-400">Provide details to help us respond faster</p>
+        <h1 className="mb-1 text-2xl font-bold">{tr('report.title')}</h1>
+        <p className="text-sm text-gray-400">{tr('report.subtitle')}</p>
       </div>
 
       {/* Content */}
@@ -151,20 +154,20 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
               <MapPin className="w-5 h-5 text-green-400" />
             </div>
             <div className="flex-1">
-              <h3 className="font-semibold mb-1">Auto-detected Location</h3>
-              <p className="text-sm text-gray-400">Nearest detected address</p>
+              <h3 className="font-semibold mb-1">{tr('report.locationTitle')}</h3>
+              <p className="text-sm text-gray-400">{tr('report.locationSubtitle')}</p>
             </div>
             {isLocating && (
               <div className="flex items-center gap-2 text-xs text-blue-400">
                 <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
-                Locating...
+                {tr('report.locating')}
               </div>
             )}
           </div>
 
           <div className="bg-gray-900/50 rounded-xl p-3 border border-gray-700/50">
             <p className="text-sm text-green-300">
-              {location || 'Detecting location...'}
+              {location || tr('report.detectingLocation')}
             </p>
           </div>
 
@@ -176,11 +179,11 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
                   async (position) => {
                     setLocation(await reverseGeocode(position.coords.latitude, position.coords.longitude, location || 'Current GPS location'));
                     setIsLocating(false);
-                    toast.success('Location updated');
+                    toast.success(tr('report.locationUpdated'));
                   },
                   () => {
                     setIsLocating(false);
-                    toast.error('Unable to get location');
+                    toast.error(tr('report.locationFailed'));
                   }
                 );
               }
@@ -188,7 +191,7 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
             className="mt-3 w-full bg-gray-700/50 hover:bg-gray-700 text-white py-2 rounded-lg text-sm font-medium transition flex items-center justify-center gap-2"
           >
             <Navigation className="w-4 h-4" />
-            Refresh Location
+            {tr('report.refreshLocation')}
           </button>
         </div>
 
@@ -199,8 +202,8 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
               <Camera className="w-5 h-5 text-purple-400" />
             </div>
             <div>
-              <h3 className="font-semibold">Emergency Photo</h3>
-              <p className="text-xs text-gray-400">Optional but recommended</p>
+              <h3 className="font-semibold">{tr('report.photoTitle')}</h3>
+              <p className="text-xs text-gray-400">{tr('report.photoSubtitle')}</p>
             </div>
           </div>
 
@@ -238,7 +241,7 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-purple-600 py-3 text-sm font-semibold text-white transition hover:bg-purple-500"
               >
                 <Camera className="h-4 w-4" />
-                Take Photo
+                {tr('report.takePhoto')}
               </button>
             </div>
           ) : (
@@ -249,7 +252,7 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
                 className="flex items-center justify-center gap-2 rounded-xl bg-purple-600 py-3 text-sm font-semibold text-white transition hover:bg-purple-500"
               >
                 <Camera className="h-4 w-4" />
-                Open Camera
+                {tr('report.openCamera')}
               </button>
               <button
                 type="button"
@@ -257,7 +260,7 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
                 className="flex items-center justify-center gap-2 rounded-xl border border-gray-700 bg-gray-700 py-3 text-sm font-semibold text-white transition hover:bg-gray-600"
               >
                 <Upload className="h-4 w-4" />
-                Upload Photo
+                {tr('report.uploadPhoto')}
               </button>
               <input
                 ref={fileInputRef}
@@ -277,9 +280,9 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
               <FileText className="w-5 h-5 text-blue-400" />
             </div>
             <div>
-              <h3 className="font-semibold">Describe the Emergency</h3>
+              <h3 className="font-semibold">{tr('report.describeTitle')}</h3>
               <p className="text-xs text-gray-400">
-                Optional extra information
+                {tr('report.describeSubtitle')}
                 </p>
             </div>
           </div>
@@ -287,14 +290,14 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="What happened? Be as detailed as possible..."
+            placeholder={tr('report.describePlaceholder')}
             className="w-full h-32 bg-gray-900/50 border border-gray-700 rounded-xl p-4 text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
           />
 
           {description && (
             <div className="mt-3 flex items-center gap-2 text-xs text-green-400">
               <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-              Description ready for assessment
+              {tr('report.descriptionReady')}
             </div>
           )}
         </div>
@@ -305,9 +308,13 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
             <div className="flex items-start gap-3">
               <ScanSearch className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
               <div className="flex-1">
-                <p className="text-sm font-medium text-blue-300 mb-1">Emergency Assessment Ready</p>
+                <p className="text-sm font-medium text-blue-300 mb-1">{tr('report.assessmentReady')}</p>
                 <p className="text-xs text-gray-400">
-                  Your {photo && description ? 'photo and description' : photo ? 'photo' : 'description'} will be assessed to determine emergency priority and dispatch the right responders.
+                  {photo && description
+                    ? tr('report.assessmentDetailPhotoDescription')
+                    : photo
+                    ? tr('report.assessmentDetailPhoto')
+                    : tr('report.assessmentDetailDescription')}
                 </p>
               </div>
             </div>
@@ -322,7 +329,7 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation }: EmergencyRe
           className="group flex w-full items-center justify-center gap-3 rounded-lg bg-red-600 py-3.5 font-bold text-white shadow-lg transition hover:bg-red-500 disabled:bg-gray-700 disabled:shadow-none"
         >
           <Send className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
-          Send Emergency Alert
+          {tr('report.submit')}
         </button>
       </div>
     </div>

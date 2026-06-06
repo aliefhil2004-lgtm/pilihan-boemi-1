@@ -28,10 +28,12 @@ function normalizeResult(value: unknown) {
   if (!value || typeof value !== 'object') return null;
   const result = value as { labels?: unknown; scores?: unknown };
   if (!Array.isArray(result.labels) || !Array.isArray(result.scores)) return null;
-  return result.labels
+  const labels = result.labels as unknown[];
+  const scores = result.scores as unknown[];
+  return labels
     .map((label, index) => ({
       label: String(label),
-      score: Number(result.scores?.[index] ?? 0)
+      score: Number(scores[index] ?? 0)
     }))
     .filter(item => Number.isFinite(item.score));
 }

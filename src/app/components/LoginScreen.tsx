@@ -2,39 +2,41 @@ import { useEffect, useState } from 'react';
 import { User, Shield, Mail, Lock, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
 import type { AseanCountry } from '../config/asean';
+import { t, type Language } from '../i18n';
 
 interface LoginScreenProps {
-  onLogin: (role: 'civilian' | 'service', credentials: { email: string; password: string }) => void;
+  onLogin: (role: 'civilian' | 'service', credentials: { email: string; password: string }) => void | Promise<void>;
   onGoToRegister: () => void;
   forcedRole?: 'civilian' | 'service';
   country?: AseanCountry;
+  language: Language;
 }
 
-export function LoginScreen({ onLogin, onGoToRegister, forcedRole, country }: LoginScreenProps) {
+export function LoginScreen({ onLogin, onGoToRegister, forcedRole, country, language }: LoginScreenProps) {
   const [selectedRole, setSelectedRole] = useState<'civilian' | 'service' | null>(forcedRole ?? null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const tr = (key: Parameters<typeof t>[1]) => t(language, key);
 
   useEffect(() => {
     if (forcedRole) setSelectedRole(forcedRole);
   }, [forcedRole]);
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!selectedRole) {
-      toast.error('Please select your role');
+      toast.error(tr('auth.needRole'));
       return;
     }
     if (!email || !password) {
-      toast.error('Please enter email and password');
+      toast.error(tr('auth.needEmailPassword'));
       return;
     }
 
     // Simple validation - in real app, this would call an API
     if (email && password.length >= 6) {
-      onLogin(selectedRole, { email, password });
-      toast.success(`Logged in as ${selectedRole === 'civilian' ? 'Civilian' : 'Emergency Service'}`);
+      await onLogin(selectedRole, { email, password });
     } else {
-      toast.error('Invalid credentials');
+      toast.error(tr('auth.invalidCredentials'));
     }
   };
 
@@ -48,15 +50,15 @@ export function LoginScreen({ onLogin, onGoToRegister, forcedRole, country }: Lo
         <h1 className="text-3xl font-bold mb-2">EmergencyConnect</h1>
         <p className="text-gray-400">
           {forcedRole === 'service'
-            ? 'Emergency Service Response Portal'
-            : 'ASEAN Emergency Response System'}
+            ? tr('auth.serviceSubtitle')
+            : tr('auth.appSubtitle')}
         </p>
       </div>
 
       {/* Role Selection */}
       {!selectedRole && !forcedRole ? (
         <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center p-6">
-          <h2 className="text-xl font-bold mb-6 text-center">Select Your Role</h2>
+          <h2 className="text-xl font-bold mb-6 text-center">{tr('auth.selectRole')}</h2>
 
           <div className="space-y-4">
             {/* Civilian Option */}
@@ -69,8 +71,8 @@ export function LoginScreen({ onLogin, onGoToRegister, forcedRole, country }: Lo
                   <User className="w-8 h-8 text-blue-400" />
                 </div>
                 <div className="flex-1 text-left">
-                  <h3 className="text-lg font-bold text-blue-300">Civilian</h3>
-                  <p className="text-sm text-gray-400">Report emergencies and request help</p>
+                  <h3 className="text-lg font-bold text-blue-300">{tr('auth.civilian')}</h3>
+                  <p className="text-sm text-gray-400">{tr('auth.civilianDetail')}</p>
                 </div>
               </div>
             </button>
@@ -85,8 +87,8 @@ export function LoginScreen({ onLogin, onGoToRegister, forcedRole, country }: Lo
                   <Shield className="w-8 h-8 text-orange-400" />
                 </div>
                 <div className="flex-1 text-left">
-                  <h3 className="text-lg font-bold text-orange-300">Emergency Service</h3>
-                  <p className="text-sm text-gray-400">Respond to emergency calls</p>
+                  <h3 className="text-lg font-bold text-orange-300">{tr('auth.service')}</h3>
+                  <p className="text-sm text-gray-400">{tr('auth.serviceDetail')}</p>
                 </div>
               </div>
             </button>
@@ -104,14 +106,14 @@ export function LoginScreen({ onLogin, onGoToRegister, forcedRole, country }: Lo
               }}
               className="text-sm text-gray-400 hover:text-white mb-6 text-left"
             >
-              ← Change role
+              ← {tr('common.changeRole')}
             </button>
           )}
 
           <div className="space-y-4">
             {/* Email Input */}
             <div>
-              <label className="block text-sm font-medium mb-2 text-gray-300">Email</label>
+              <label className="block text-sm font-medium mb-2 text-gray-300">{tr('common.email')}</label>
               <div className="relative">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
                 <input
@@ -126,7 +128,7 @@ export function LoginScreen({ onLogin, onGoToRegister, forcedRole, country }: Lo
 
             {/* Password Input */}
             <div>
-              <label className="block text-sm font-medium mb-2 text-gray-300">Password</label>
+              <label className="block text-sm font-medium mb-2 text-gray-300">{tr('common.password')}</label>
               <div className="relative">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
                 <input
@@ -148,12 +150,12 @@ export function LoginScreen({ onLogin, onGoToRegister, forcedRole, country }: Lo
                   : 'bg-gradient-to-r from-orange-500 to-orange-700 hover:from-orange-600 hover:to-orange-800 shadow-orange-500/50'
               }`}
             >
-              Login
+              {tr('common.login')}
             </button>
 
             {/* Demo Credentials */}
             <div className="mt-6 rounded-lg border border-gray-700 bg-gray-800/50 p-4">
-              <p className="text-xs text-gray-400 mb-2 font-medium">Demo Credentials:</p>
+              <p className="text-xs text-gray-400 mb-2 font-medium">{tr('auth.demoCredentials')}</p>
               <div className="text-xs text-gray-500 space-y-1">
                 {selectedRole === 'civilian' ? (
                   <>
@@ -174,7 +176,7 @@ export function LoginScreen({ onLogin, onGoToRegister, forcedRole, country }: Lo
               onClick={onGoToRegister}
               className="w-full text-sm text-gray-400 hover:text-white transition mt-4"
             >
-              Don't have an account? <span className="text-blue-400">Register</span>
+              {tr('auth.noAccount')} <span className="text-blue-400">{tr('common.register')}</span>
             </button>
           </div>
         </div>
@@ -183,7 +185,7 @@ export function LoginScreen({ onLogin, onGoToRegister, forcedRole, country }: Lo
       {/* Footer */}
       <div className="p-6 text-center">
         <p className="text-xs text-gray-500">
-          Emergency Hotline: <span className="text-red-400 font-bold">{country?.emergency.ambulance ?? 'Local emergency number'}</span>
+          {tr('common.emergencyHotline')}: <span className="text-red-400 font-bold">{country?.emergency.ambulance ?? tr('common.localEmergencyNumber')}</span>
         </p>
       </div>
     </div>

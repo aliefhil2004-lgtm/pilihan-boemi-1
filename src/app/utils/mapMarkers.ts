@@ -31,5 +31,5 @@ export const civilianMarkerIcon = markerIcon('!', '#f97316');
 export const serviceMarkerIcons: Record<ServiceType, L.DivIcon> = {
   ambulance: markerIcon('+', '#dc2626'),
   fire: markerIcon('&#128293;', '#ea580c'),
-  police: markerIcon('&#128737;', '#4f46e5')
+  police: markerIcon('&#129465;', '#4f46e5')
 };

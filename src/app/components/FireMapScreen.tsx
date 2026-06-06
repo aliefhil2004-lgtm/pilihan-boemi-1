@@ -1,19 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FireMapView } from './FireMapView';
-import { Ambulance, Flame, Shield, ArrowLeft, MapPinned, Video, ExternalLink, X } from 'lucide-react';
+import { Ambulance, Flame, Shield, ArrowLeft, MapPinned, Video, ExternalLink, X, AlertTriangle } from 'lucide-react';
 import { cleanupExpiredReports } from '../services/reportStorage';
 import { getReportServices, type StoredEmergencyReport } from '../types/emergency';
 import { indonesiaPublicCctv, type PublicCctvCamera } from '../config/cctv';
+import { t, type Language } from '../i18n';
 
 interface FireMapScreenProps {
   userLocation: { lat: number; lng: number };
   countryCode: string;
   onBack: () => void;
+  language: Language;
 }
 
-export function FireMapScreen({ userLocation, countryCode, onBack }: FireMapScreenProps) {
+export function FireMapScreen({ userLocation, countryCode, onBack, language }: FireMapScreenProps) {
   const [reports, setReports] = useState<StoredEmergencyReport[]>([]);
   const [selectedCamera, setSelectedCamera] = useState<PublicCctvCamera | null>(null);
+  const trafficEnabled = Boolean(import.meta.env.VITE_TOMTOM_API_KEY);
+  const tr = (key: Parameters<typeof t>[1]) => t(language, key);
   const cameras = useMemo(
     () => countryCode === 'ID' ? indonesiaPublicCctv : [],
     [countryCode]
@@ -48,14 +52,14 @@ export function FireMapScreen({ userLocation, countryCode, onBack }: FireMapScre
       <div className="border-b border-blue-500/30 bg-gradient-to-br from-blue-900/30 to-indigo-900/20 p-4">
         <div className="flex items-center gap-3 mb-2">
           <button onClick={onBack} className="flex items-center gap-2 rounded-lg border border-gray-600 bg-gray-900/50 px-3 py-2 text-sm font-semibold hover:bg-gray-900/80" aria-label="Back to response center">
-            <ArrowLeft className="h-4 w-4" /> Back
+            <ArrowLeft className="h-4 w-4" /> {tr('common.back')}
           </button>
           <div className="bg-blue-500/20 p-2 rounded-lg">
             <MapPinned className="w-5 h-5 text-blue-400" />
           </div>
           <div>
-            <h1 className="text-lg font-bold">Emergency Response Map</h1>
-            <p className="text-xs text-gray-400">All active reported emergency locations</p>
+            <h1 className="text-lg font-bold">{tr('map.title')}</h1>
+            <p className="text-xs text-gray-400">{tr('map.subtitle')}</p>
           </div>
         </div>
       </div>
@@ -67,6 +71,23 @@ export function FireMapScreen({ userLocation, countryCode, onBack }: FireMapScre
           cameras={cameras}
           onCameraSelect={setSelectedCamera}
         />
+        <div className="absolute left-3 top-3 z-10 rounded-xl border border-gray-700 bg-gray-950/90 p-3 text-xs shadow-lg backdrop-blur">
+          <div className="mb-2 flex items-center gap-2 font-semibold text-white">
+            <AlertTriangle className="h-4 w-4 text-red-400" />
+            {tr('map.dangerZones')}
+          </div>
+          <div className="space-y-1.5 text-gray-300">
+            <div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-red-600/70" /> {tr('map.critical')}</div>
+            <div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-orange-500/70" /> {tr('map.high')}</div>
+            <div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-yellow-500/70" /> {tr('map.yellow')}</div>
+            <div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-green-500/70" /> {tr('map.watch')}</div>
+          </div>
+        </div>
+        <div className="absolute right-3 top-3 z-10 rounded-xl border border-gray-700 bg-gray-950/90 px-3 py-2 text-xs shadow-lg backdrop-blur">
+          <span className={trafficEnabled ? 'text-emerald-300' : 'text-yellow-300'}>
+            {tr('map.traffic')}: {trafficEnabled ? tr('map.live') : tr('map.apiKeyNeeded')}
+          </span>
+        </div>
       </div>
 
       <div className="bg-gray-900/50 border-t border-gray-800 p-4">
@@ -96,9 +117,12 @@ export function FireMapScreen({ userLocation, countryCode, onBack }: FireMapScre
               </div>
         </div>
         <div className="mt-3 flex items-center justify-center gap-4 text-xs text-gray-500">
-          <span>{reports.length} active reported locations</span>
+          <span>{reports.length} {tr('map.activeLocations')}</span>
+          <span className="flex items-center gap-1.5 text-red-300">
+            <AlertTriangle className="h-3.5 w-3.5" /> {reports.filter(report => report.injuryScale >= 8).length} {tr('map.criticalZones')}
+          </span>
           <span className="flex items-center gap-1.5 text-emerald-300">
-            <Video className="h-3.5 w-3.5" /> {cameras.length} public CCTV
+            <Video className="h-3.5 w-3.5" /> {cameras.length} {tr('map.publicCctv')}
           </span>
         </div>
       </div>

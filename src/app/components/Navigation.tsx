@@ -1,15 +1,17 @@
 import { Home, FileText, History } from 'lucide-react';
+import { t, type Language } from '../i18n';
 
 interface NavigationProps {
   currentScreen: string;
   onNavigate: (screen: 'home' | 'report' | 'history') => void;
+  language: Language;
 }
 
-export function Navigation({ currentScreen, onNavigate }: NavigationProps) {
+export function Navigation({ currentScreen, onNavigate, language }: NavigationProps) {
   const menuItems = [
-    { id: 'home', label: 'Home', icon: Home },
-    { id: 'report', label: 'Report', icon: FileText },
-    { id: 'history', label: 'History', icon: History },
+    { id: 'home', label: t(language, 'nav.home'), icon: Home },
+    { id: 'report', label: t(language, 'nav.report'), icon: FileText },
+    { id: 'history', label: t(language, 'nav.history'), icon: History },
   ] as const;
 
   return (

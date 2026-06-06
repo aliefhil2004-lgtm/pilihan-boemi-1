@@ -1,5 +1,6 @@
 import { Ambulance, Flame, History, MapPin, Shield } from 'lucide-react';
 import type { ServiceType } from '../types/emergency';
+import { t, type Language } from '../i18n';
 
 interface EmergencyResultScreenProps {
   emergencyType: string;
@@ -11,6 +12,7 @@ interface EmergencyResultScreenProps {
   detectedIndicators?: string[];
   annotatedImage?: string;
   onViewDetails: () => void;
+  language: Language;
 }
 
 const serviceConfig = {
@@ -52,30 +54,37 @@ export function EmergencyResultScreen({
   recommendedService,
   recommendedServices,
   location,
-  onViewDetails
+  onViewDetails,
+  language
 }: EmergencyResultScreenProps) {
   const primaryConfig = serviceConfig[recommendedService];
+  const tr = (key: Parameters<typeof t>[1]) => t(language, key);
+  const serviceNames: Record<ServiceType, string> = {
+    ambulance: language === 'id' ? 'Medis' : 'Medical',
+    fire: language === 'id' ? 'Kebakaran' : 'Fire',
+    police: language === 'id' ? 'Polisi' : 'Police'
+  };
 
   return (
     <div className="flex h-full flex-col bg-gradient-to-b from-gray-900 via-gray-900 to-black pb-16 text-white">
       <div className="border-b border-green-500/30 bg-green-950/50 px-5 py-5 sm:px-6">
-        <h1 className="text-2xl font-bold">Alert Sent</h1>
-        <p className="mt-1 text-sm text-green-300/80">Emergency services have received your report</p>
+        <h1 className="text-2xl font-bold">{tr('result.alertSent')}</h1>
+        <p className="mt-1 text-sm text-green-300/80">{tr('result.received')}</p>
       </div>
 
       <div className="app-scrollbar flex-1 overflow-y-auto p-4 sm:p-5">
         <div className="mx-auto max-w-xl space-y-4">
           <div className="rounded-2xl border border-green-500/30 bg-green-500/10 p-5 text-center">
-            <p className="text-lg font-bold text-green-300">Help is being coordinated</p>
+            <p className="text-lg font-bold text-green-300">{tr('result.coordinated')}</p>
             <p className="mt-2 text-sm text-gray-300">
-              Stay in a safe place and keep your phone available for updates.
+              {tr('result.staySafe')}
             </p>
           </div>
 
           <div className="rounded-2xl border border-gray-700 bg-gray-800/70 p-5">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs uppercase tracking-wide text-gray-500">Emergency</p>
+                <p className="text-xs uppercase tracking-wide text-gray-500">{tr('result.emergency')}</p>
                 <h2 className="mt-1 text-lg font-bold">{emergencyType}</h2>
               </div>
               <span className={`rounded-full border px-3 py-1 text-xs font-bold ${priorityStyles[priority]}`}>
@@ -84,7 +93,7 @@ export function EmergencyResultScreen({
             </div>
 
             <div className="mt-5">
-              <p className="mb-2 text-xs uppercase tracking-wide text-gray-500">Services notified</p>
+              <p className="mb-2 text-xs uppercase tracking-wide text-gray-500">{tr('result.servicesNotified')}</p>
               <div className="flex flex-wrap gap-2">
                 {recommendedServices.map(service => {
                   const config = serviceConfig[service];
@@ -95,7 +104,7 @@ export function EmergencyResultScreen({
                       className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${config.border} ${config.bg} ${config.text}`}
                     >
                       <ServiceIcon className="h-4 w-4" />
-                      {config.name}
+                      {serviceNames[service]}
                     </span>
                   );
                 })}
@@ -116,7 +125,7 @@ export function EmergencyResultScreen({
           className={`flex w-full items-center justify-center gap-3 rounded-2xl bg-gradient-to-r ${primaryConfig.gradient} py-4 text-lg font-bold text-white shadow-lg transition hover:opacity-90`}
         >
           <History className="h-6 w-6" />
-          View Report Details
+          {tr('result.viewDetails')}
         </button>
       </div>
     </div>

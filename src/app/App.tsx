@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Toaster } from 'sonner';
+import { Toaster, toast } from 'sonner';
 import { LoginScreen } from './components/LoginScreen';
 import { RegisterScreen } from './components/RegisterScreen';
 import { HomeScreen } from './components/HomeScreen';
@@ -14,12 +14,21 @@ import { ChatScreen } from './components/ChatScreen';
 import { Navigation } from './components/Navigation';
 import { LocationPicker } from './components/LocationPicker';
 import { CountryPicker } from './components/CountryPicker';
+import { LanguageToggle } from './components/LanguageToggle';
 import { ArrowLeft, LogOut, Flame, Globe2 } from 'lucide-react';
 import { analyzeEmergency } from './services/ai';
 import { createServiceStatuses, getReportServices, type ServiceType, type StoredEmergencyReport } from './types/emergency';
 import { cleanupExpiredReports, resetPreviousHistoryOnce, saveReport } from './services/reportStorage';
 import { startReportSync } from './services/firebaseSync';
+import {
+  getFriendlyAuthError,
+  listenToCitizenSession,
+  loginCitizenAccount,
+  logoutFirebaseAccount,
+  registerCitizenAccount
+} from './services/auth';
 import { getAseanCountry, type AseanCountryCode } from './config/asean';
+import { t as translate, type Language } from './i18n';
 
 type Screen = 'login' | 'register' | 'home' | 'report' | 'processing' | 'result' | 'tracking' | 'service-dashboard' | 'fire-map' | 'history' | 'chat';
 type UserRole = 'civilian' | 'service' | null;
@@ -75,6 +84,9 @@ export default function App() {
   const [selectedService, setSelectedService] = useState<ServiceType>('ambulance');
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [showCountryPicker, setShowCountryPicker] = useState(false);
+  const [language, setLanguage] = useState<Language>(() =>
+    (localStorage.getItem('appLanguage') as Language) || 'en'
+  );
   const [countryCode, setCountryCode] = useState<AseanCountryCode>(() =>
     (localStorage.getItem('aseanCountry') as AseanCountryCode) || 'ID'
   );
@@ -94,6 +106,7 @@ export default function App() {
     description: '',
     location: ''
   });
+  const tr = (key: Parameters<typeof translate>[1]) => translate(language, key);
 
   useEffect(() => {
     resetPreviousHistoryOnce();
@@ -106,19 +119,57 @@ export default function App() {
     };
   }, []);
 
-  const handleLogin = (role: UserRole, credentials: { email: string; password: string }) => {
-    setUserRole(role);
-    setCurrentScreen('home');
+  useEffect(() => {
+    if (portalRole === 'service') return undefined;
+
+    return listenToCitizenSession(user => {
+      if (!user) return;
+      setUserRole('civilian');
+      setCurrentScreen(screen => screen === 'login' || screen === 'register' ? 'home' : screen);
+    });
+  }, [portalRole]);
+
+  const handleLogin = async (role: UserRole, credentials: { email: string; password: string }) => {
+    if (role === 'service') {
+      setUserRole(role);
+      setCurrentScreen('home');
+      toast.success(language === 'id' ? 'Masuk sebagai Layanan Darurat' : 'Logged in as Emergency Service');
+      return;
+    }
+
+    try {
+      await loginCitizenAccount(credentials.email, credentials.password);
+      setUserRole('civilian');
+      setCurrentScreen('home');
+      toast.success(language === 'id' ? 'Akun warga berhasil masuk' : 'Citizen account logged in');
+    } catch (error) {
+      toast.error(getFriendlyAuthError(error));
+    }
   };
 
-  const handleRegister = (role: UserRole, data: RegisterData) => {
-    // In production, this would send to backend for verification
-    // For demo, we'll auto-approve and login
-    setUserRole(role);
-    setCurrentScreen('home');
+  const handleRegister = async (role: UserRole, data: RegisterData) => {
+    if (role === 'service') {
+      setUserRole(role);
+      setCurrentScreen('home');
+      toast.success(language === 'id' ? 'Akun demo layanan dibuat' : 'Service demo account created');
+      return;
+    }
+
+    try {
+      await registerCitizenAccount({
+        ...data,
+        countryCode: country.code
+      });
+      setUserRole('civilian');
+      setCurrentScreen('home');
+      toast.success(language === 'id' ? 'Akun warga berhasil dibuat' : 'Citizen account created');
+    } catch (error) {
+      toast.error(getFriendlyAuthError(error));
+    }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await logoutFirebaseAccount();
     setUserRole(null);
     setCurrentScreen('login');
   };
@@ -136,6 +187,11 @@ export default function App() {
       coords: { lat: nextCountry.center.lat, lng: nextCountry.center.lng }
     });
     setShowCountryPicker(false);
+  };
+
+  const handleLanguageChange = (nextLanguage: Language) => {
+    localStorage.setItem('appLanguage', nextLanguage);
+    setLanguage(nextLanguage);
   };
 
   const handleBack = () => {
@@ -301,7 +357,6 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
   const showNavigation =
   userRole === 'civilian' &&
   currentScreen !== 'service-dashboard' &&
-  currentScreen !== 'fire-map' &&
   currentScreen !== 'processing';
   
   // Show login or register screen if not logged in
@@ -309,19 +364,23 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
     return (
       <div className={`app-shell flex flex-col ${portalRole === 'service' ? 'app-shell-service' : 'app-shell-civilian'}`}>
         <Toaster position="top-center" richColors />
-        <button
-          onClick={() => setShowCountryPicker(true)}
-          className="absolute right-4 top-4 z-50 flex items-center gap-2 rounded-lg border border-gray-700 bg-gray-800/90 px-3 py-2 text-sm text-white shadow-lg"
-        >
-          <Globe2 className="h-4 w-4 text-blue-400" />
-          {country.flag} {country.code}
-        </button>
+        <div className="absolute right-4 top-4 z-50 flex items-center gap-2">
+          <LanguageToggle language={language} onChange={handleLanguageChange} />
+          <button
+            onClick={() => setShowCountryPicker(true)}
+            className="flex h-10 items-center gap-2 rounded-lg border border-gray-700 bg-gray-800/90 px-3 text-sm text-white shadow-lg"
+          >
+            <Globe2 className="h-4 w-4 text-blue-400" />
+            {country.flag} {country.code}
+          </button>
+        </div>
         {currentScreen === 'register' ? (
           <RegisterScreen
             onRegister={handleRegister}
             onBackToLogin={() => setCurrentScreen('login')}
             forcedRole={portalRole}
             country={country}
+            language={language}
           />
         ) : (
           <LoginScreen
@@ -329,6 +388,7 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
             onGoToRegister={() => setCurrentScreen('register')}
             forcedRole={portalRole}
             country={country}
+            language={language}
           />
         )}
         {showCountryPicker && (
@@ -349,6 +409,7 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
       {/* Top Actions */}
       {(currentScreen === 'home' || currentScreen === 'service-dashboard') && (
         <div className="absolute right-4 top-4 z-50 flex items-center gap-2 sm:right-6 sm:top-5">
+          <LanguageToggle language={language} onChange={handleLanguageChange} />
           {/* Emergency Map Button - Only for Service role */}
           {userRole === 'service' && (
             <button
@@ -357,7 +418,7 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
               aria-label="Open emergency map"
             >
               <Flame className="w-4 h-4" />
-              <span className="hidden text-sm sm:inline">Emergency Map</span>
+              <span className="hidden text-sm sm:inline">{tr('map.title')}</span>
             </button>
           )}
 
@@ -368,7 +429,7 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
             aria-label="Logout"
           >
             <LogOut className="w-4 h-4" />
-            <span className="hidden text-sm sm:inline">Logout</span>
+            <span className="hidden text-sm sm:inline">{tr('common.logout')}</span>
           </button>
         </div>
       )}
@@ -387,10 +448,12 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
         <HomeScreen
           onEmergencyStart={handleEmergencyStart}
           onServiceSelect={handleServiceSelect}
+          onOpenDangerMap={() => setCurrentScreen('fire-map')}
           currentLocation={userLocation.address}
           onChangeLocation={() => setShowLocationPicker(true)}
           country={country}
           userRole={userRole}
+          language={language}
         />
       )}
 
@@ -398,6 +461,7 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
         <EmergencyReportScreen
           onSubmit={handleReportSubmit}
           defaultLocation={userLocation.address}
+          language={language}
         />
       )}
 
@@ -423,6 +487,7 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
             setHistoryReportId(emergencyData.id ?? null);
             setCurrentScreen('history');
           }}
+          language={language}
         />
       )}
 
@@ -451,6 +516,7 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
           userLocation={userLocation.coords}
           countryCode={country.code}
           onBack={() => setCurrentScreen('home')}
+          language={language}
         />
       )}
 
@@ -475,6 +541,7 @@ const handleNavigate = (screen: 'home' | 'report' | 'history') => {
         <Navigation
           currentScreen={currentScreen}
           onNavigate={handleNavigate}
+          language={language}
         />
       )}
 

@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react';
 import { User, Shield, Mail, Lock, MapPin, Camera, AlertCircle, IdCard } from 'lucide-react';
 import { toast } from 'sonner';
 import type { AseanCountry } from '../config/asean';
+import { t, type Language } from '../i18n';
 
 interface RegisterScreenProps {
-  onRegister: (role: 'civilian' | 'service', data: RegisterData) => void;
+  onRegister: (role: 'civilian' | 'service', data: RegisterData) => void | Promise<void>;
   onBackToLogin: () => void;
   forcedRole?: 'civilian' | 'service';
   country?: AseanCountry;
+  language: Language;
 }
 
 interface RegisterData {
@@ -21,7 +23,7 @@ interface RegisterData {
   credentialPhoto?: string;
 }
 
-export function RegisterScreen({ onRegister, onBackToLogin, forcedRole, country }: RegisterScreenProps) {
+export function RegisterScreen({ onRegister, onBackToLogin, forcedRole, country, language }: RegisterScreenProps) {
   const [selectedRole, setSelectedRole] = useState<'civilian' | 'service' | null>(forcedRole ?? null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -32,6 +34,7 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole, country 
   const [identityNumber, setIdentityNumber] = useState('');
   const [serviceType, setServiceType] = useState<'ambulance' | 'fire' | 'police'>('ambulance');
   const [credentialPhoto, setCredentialPhoto] = useState<string | null>(null);
+  const tr = (key: Parameters<typeof t>[1]) => t(language, key);
 
   useEffect(() => {
     if (forcedRole) setSelectedRole(forcedRole);
@@ -49,7 +52,7 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole, country 
     }
   };
 
-  const handleRegister = () => {
+  const handleRegister = async () => {
     if (!selectedRole) {
       toast.error('Please select your role');
       return;
@@ -88,8 +91,7 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole, country 
       })
     };
 
-    onRegister(selectedRole, registerData);
-    toast.success('Registration submitted for verification');
+    await onRegister(selectedRole, registerData);
   };
 
   return (
@@ -99,18 +101,18 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole, country 
         <div className="bg-gradient-to-br from-blue-500 to-blue-700 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3 shadow-lg shadow-blue-500/50">
           <MapPin className="w-8 h-8" />
         </div>
-        <h1 className="text-2xl font-bold mb-1">Create Account</h1>
+        <h1 className="text-2xl font-bold mb-1">{tr('register.createAccount')}</h1>
         <p className="text-gray-400 text-sm">
           {forcedRole === 'service'
-            ? 'Emergency service account verification'
-            : 'Join EmergencyConnect ASEAN'}
+            ? tr('register.serviceVerification')
+            : tr('register.join')}
         </p>
       </div>
 
       {/* Role Selection */}
       {!selectedRole && !forcedRole ? (
         <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center p-6">
-          <h2 className="text-lg font-bold mb-4 text-center">Select Your Role</h2>
+          <h2 className="text-lg font-bold mb-4 text-center">{tr('auth.selectRole')}</h2>
 
           <div className="space-y-3 mb-6">
             {/* Civilian Option */}
@@ -123,8 +125,8 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole, country 
                   <User className="w-6 h-6 text-blue-400" />
                 </div>
                 <div className="flex-1 text-left">
-                  <h3 className="font-bold text-blue-300">Civilian Account</h3>
-                  <p className="text-xs text-gray-400">Request emergency assistance</p>
+                  <h3 className="font-bold text-blue-300">{tr('register.civilianAccount')}</h3>
+                  <p className="text-xs text-gray-400">{tr('auth.civilianDetail')}</p>
                 </div>
               </div>
             </button>
@@ -139,8 +141,8 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole, country 
                   <Shield className="w-6 h-6 text-orange-400" />
                 </div>
                 <div className="flex-1 text-left">
-                  <h3 className="font-bold text-orange-300">Emergency Service</h3>
-                  <p className="text-xs text-gray-400">Respond to emergencies (requires verification)</p>
+                  <h3 className="font-bold text-orange-300">{tr('auth.service')}</h3>
+                  <p className="text-xs text-gray-400">{tr('register.serviceRequiresVerification')}</p>
                 </div>
               </div>
             </button>
@@ -150,7 +152,7 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole, country 
             onClick={onBackToLogin}
             className="text-sm text-gray-400 hover:text-white transition"
           >
-            Already have an account? <span className="text-blue-400">Login</span>
+            {tr('register.alreadyHaveAccount')} <span className="text-blue-400">{tr('common.login')}</span>
           </button>
         </div>
       ) : (
@@ -185,7 +187,7 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole, country 
                 <Shield className="w-5 h-5 text-orange-400" />
               )}
               <p className="font-bold text-sm">
-                {selectedRole === 'civilian' ? 'Civilian Registration' : 'Emergency Service Registration'}
+                {selectedRole === 'civilian' ? tr('register.civilianRegistration') : tr('register.serviceRegistration')}
               </p>
             </div>
           </div>
@@ -193,7 +195,7 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole, country 
           <div className="space-y-3">
             {/* Name */}
             <div>
-              <label className="block text-xs font-medium mb-1 text-gray-300">Full Name *</label>
+              <label className="block text-xs font-medium mb-1 text-gray-300">{tr('register.fullName')} *</label>
               <input
                 type="text"
                 value={name}
@@ -205,7 +207,7 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole, country 
 
             {/* Email */}
             <div>
-              <label className="block text-xs font-medium mb-1 text-gray-300">Email *</label>
+              <label className="block text-xs font-medium mb-1 text-gray-300">{tr('common.email')} *</label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                 <input
@@ -220,7 +222,7 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole, country 
 
             {/* Phone */}
             <div>
-              <label className="block text-xs font-medium mb-1 text-gray-300">Phone Number *</label>
+              <label className="block text-xs font-medium mb-1 text-gray-300">{tr('register.phone')} *</label>
               <input
                 type="tel"
                 value={phone}
@@ -231,7 +233,7 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole, country 
             </div>
 
             <div>
-              <label className="block text-xs font-medium mb-1 text-gray-300">Identity Document *</label>
+              <label className="block text-xs font-medium mb-1 text-gray-300">{tr('register.identityDocument')} *</label>
               <div className="grid grid-cols-[0.9fr_1.4fr] gap-2">
                 <select
                   value={identityType}
@@ -252,7 +254,7 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole, country 
                   />
                 </div>
               </div>
-              <p className="mt-1 text-xs text-gray-500">Used only for international-standard account verification.</p>
+              <p className="mt-1 text-xs text-gray-500">{tr('register.identityNote')}</p>
             </div>
 
             {/* Service Type (Emergency Service Only) */}
@@ -321,7 +323,7 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole, country 
 
             {/* Password */}
             <div>
-              <label className="block text-xs font-medium mb-1 text-gray-300">Password *</label>
+              <label className="block text-xs font-medium mb-1 text-gray-300">{tr('common.password')} *</label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                 <input
@@ -336,7 +338,7 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole, country 
 
             {/* Confirm Password */}
             <div>
-              <label className="block text-xs font-medium mb-1 text-gray-300">Confirm Password *</label>
+              <label className="block text-xs font-medium mb-1 text-gray-300">{tr('register.confirmPassword')} *</label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                 <input
@@ -358,14 +360,14 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole, country 
                   : 'bg-gradient-to-r from-orange-500 to-orange-700 hover:from-orange-600 hover:to-orange-800 shadow-orange-500/50'
               }`}
             >
-              {selectedRole === 'service' ? 'Submit for Verification' : 'Create Account'}
+              {selectedRole === 'service' ? tr('register.submitVerification') : tr('register.createAccount')}
             </button>
 
             <button
               onClick={onBackToLogin}
               className="w-full text-sm text-gray-400 hover:text-white transition mt-3"
             >
-              Already have an account? <span className="text-blue-400">Login</span>
+              {tr('register.alreadyHaveAccount')} <span className="text-blue-400">{tr('common.login')}</span>
             </button>
           </div>
         </div>

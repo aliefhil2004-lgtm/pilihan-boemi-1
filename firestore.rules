@@ -11,5 +11,8 @@ service cloud.firestore {
     match /liveGps/{serviceId} {
       allow read, write: if true;
     }
+    match /users/{userId} {
+      allow read, create, update: if request.auth != null && request.auth.uid == userId;
+    }
   }
 }
