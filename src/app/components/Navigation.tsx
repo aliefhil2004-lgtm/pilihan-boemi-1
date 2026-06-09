@@ -1,22 +1,28 @@
-import { Home, FileText, History } from 'lucide-react';
+import { Home, History, User } from 'lucide-react';
 import { t, type Language } from '../i18n';
 
 interface NavigationProps {
   currentScreen: string;
-  onNavigate: (screen: 'home' | 'report' | 'history') => void;
+  onNavigate: (screen: 'home' | 'history' | 'profile') => void;
   language: Language;
+  userRole?: 'civilian' | 'service' | null;
 }
 
-export function Navigation({ currentScreen, onNavigate, language }: NavigationProps) {
-  const menuItems = [
-    { id: 'home', label: t(language, 'nav.home'), icon: Home },
-    { id: 'report', label: t(language, 'nav.report'), icon: FileText },
-    { id: 'history', label: t(language, 'nav.history'), icon: History },
-  ] as const;
+export function Navigation({ currentScreen, onNavigate, language, userRole = 'civilian' }: NavigationProps) {
+  const menuItems = userRole === 'service'
+    ? [
+      { id: 'home', label: t(language, 'nav.home'), icon: Home },
+      { id: 'profile', label: t(language, 'nav.profile'), icon: User },
+    ] as const
+    : [
+      { id: 'home', label: t(language, 'nav.home'), icon: Home },
+      { id: 'history', label: t(language, 'nav.history'), icon: History },
+      { id: 'profile', label: t(language, 'nav.profile'), icon: User },
+    ] as const;
 
   return (
-    <nav className="absolute bottom-0 left-0 right-0 z-40 border-t border-gray-800 bg-gray-950/95 backdrop-blur-xl">
-      <div className="grid grid-cols-3 items-center gap-2 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2">
+    <nav className="absolute bottom-0 left-0 right-0 z-40 h-20 rounded-t-[24px] bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
+      <div className={`mx-auto grid h-full max-w-[390px] items-center justify-between gap-2 px-[27px] ${userRole === 'service' ? 'grid-cols-2 px-20' : 'grid-cols-3'}`}>
         {menuItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentScreen === item.id;
@@ -25,15 +31,15 @@ export function Navigation({ currentScreen, onNavigate, language }: NavigationPr
             <button
               key={item.id}
               onClick={() => onNavigate(item.id)}
-              className={`flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-lg px-3 py-1.5 transition-all ${
+              className={`flex flex-col items-center justify-center gap-1 rounded-lg px-3 py-1 transition-all ${
                 isActive
-                  ? 'bg-blue-500/15 text-blue-300'
-                  : 'text-gray-500 hover:bg-gray-800/60 hover:text-gray-300'
+                  ? 'text-[#ff454b]'
+                  : 'text-[#9aa3b1] hover:bg-slate-50 hover:text-[#0b3850]'
               }`}
               aria-current={isActive ? 'page' : undefined}
             >
-              <Icon className="h-5 w-5" />
-              <span className="text-xs font-medium">{item.label}</span>
+              <Icon className="h-6 w-6" />
+              <span className={`text-[10px] leading-[15px] ${isActive ? 'font-bold' : 'font-medium'}`}>{item.label}</span>
             </button>
           );
         })}

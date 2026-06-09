@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { User, Shield, Mail, Lock, MapPin, Camera, AlertCircle, IdCard } from 'lucide-react';
+import { useState } from 'react';
+import { Mail, Lock, ShieldPlus, IdCard } from 'lucide-react';
 import { toast } from 'sonner';
 import type { AseanCountry } from '../config/asean';
 import { t, type Language } from '../i18n';
@@ -24,7 +24,6 @@ interface RegisterData {
 }
 
 export function RegisterScreen({ onRegister, onBackToLogin, forcedRole, country, language }: RegisterScreenProps) {
-  const [selectedRole, setSelectedRole] = useState<'civilian' | 'service' | null>(forcedRole ?? null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -32,32 +31,9 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole, country,
   const [phone, setPhone] = useState('');
   const [identityType, setIdentityType] = useState<'national-id' | 'passport' | 'drivers-license'>('national-id');
   const [identityNumber, setIdentityNumber] = useState('');
-  const [serviceType, setServiceType] = useState<'ambulance' | 'fire' | 'police'>('ambulance');
-  const [credentialPhoto, setCredentialPhoto] = useState<string | null>(null);
   const tr = (key: Parameters<typeof t>[1]) => t(language, key);
 
-  useEffect(() => {
-    if (forcedRole) setSelectedRole(forcedRole);
-  }, [forcedRole]);
-
-  const handleCredentialUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setCredentialPhoto(reader.result as string);
-        toast.success('Credential photo uploaded');
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
   const handleRegister = async () => {
-    if (!selectedRole) {
-      toast.error('Please select your role');
-      return;
-    }
-
     if (!email || !password || !name || !phone || !identityNumber) {
       toast.error('Please fill all required fields');
       return;
@@ -73,280 +49,149 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole, country,
       return;
     }
 
-    if (selectedRole === 'service' && !credentialPhoto) {
-      toast.error('Please upload your credential photo for verification');
-      return;
-    }
-
     const registerData: RegisterData = {
       email,
       password,
       name,
       phone,
       identityType,
-      identityNumber,
-      ...(selectedRole === 'service' && {
-        serviceType,
-        credentialPhoto: credentialPhoto || undefined
-      })
+      identityNumber
     };
 
-    await onRegister(selectedRole, registerData);
+    await onRegister('civilian', registerData);
   };
 
-  return (
-    <div className="app-scrollbar flex h-full flex-col overflow-y-auto bg-gradient-to-b from-gray-900 via-gray-950 to-gray-950 text-white">
-      {/* Header */}
-      <div className="p-6 text-center pt-8">
-        <div className="bg-gradient-to-br from-blue-500 to-blue-700 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3 shadow-lg shadow-blue-500/50">
-          <MapPin className="w-8 h-8" />
-        </div>
-        <h1 className="text-2xl font-bold mb-1">{tr('register.createAccount')}</h1>
-        <p className="text-gray-400 text-sm">
-          {forcedRole === 'service'
-            ? tr('register.serviceVerification')
-            : tr('register.join')}
-        </p>
-      </div>
-
-      {/* Role Selection */}
-      {!selectedRole && !forcedRole ? (
-        <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center p-6">
-          <h2 className="text-lg font-bold mb-4 text-center">{tr('auth.selectRole')}</h2>
-
-          <div className="space-y-3 mb-6">
-            {/* Civilian Option */}
-            <button
-              onClick={() => setSelectedRole('civilian')}
-              className="w-full bg-gradient-to-br from-blue-500/20 to-blue-700/20 border-2 border-blue-500/50 rounded-xl p-5 hover:border-blue-400 hover:bg-blue-500/30 transition-all group"
-            >
-              <div className="flex items-center gap-3">
-                <div className="bg-blue-500/30 p-3 rounded-lg group-hover:bg-blue-500/50 transition">
-                  <User className="w-6 h-6 text-blue-400" />
-                </div>
-                <div className="flex-1 text-left">
-                  <h3 className="font-bold text-blue-300">{tr('register.civilianAccount')}</h3>
-                  <p className="text-xs text-gray-400">{tr('auth.civilianDetail')}</p>
-                </div>
-              </div>
-            </button>
-
-            {/* Emergency Service Option */}
-            <button
-              onClick={() => setSelectedRole('service')}
-              className="w-full bg-gradient-to-br from-orange-500/20 to-orange-700/20 border-2 border-orange-500/50 rounded-xl p-5 hover:border-orange-400 hover:bg-orange-500/30 transition-all group"
-            >
-              <div className="flex items-center gap-3">
-                <div className="bg-orange-500/30 p-3 rounded-lg group-hover:bg-orange-500/50 transition">
-                  <Shield className="w-6 h-6 text-orange-400" />
-                </div>
-                <div className="flex-1 text-left">
-                  <h3 className="font-bold text-orange-300">{tr('auth.service')}</h3>
-                  <p className="text-xs text-gray-400">{tr('register.serviceRequiresVerification')}</p>
-                </div>
-              </div>
-            </button>
-          </div>
-
-          <button
-            onClick={onBackToLogin}
-            className="text-sm text-gray-400 hover:text-white transition"
-          >
-            {tr('register.alreadyHaveAccount')} <span className="text-blue-400">{tr('common.login')}</span>
-          </button>
-        </div>
-      ) : (
-        /* Registration Form */
-        <div className="mx-auto w-full max-w-md flex-1 p-6 pb-8">
-          {!forcedRole && (
-            <button
-              onClick={() => {
-                setSelectedRole(null);
-                setEmail('');
-                setPassword('');
-                setConfirmPassword('');
-                setName('');
-                setPhone('');
-                setCredentialPhoto(null);
-              }}
-              className="text-sm text-gray-400 hover:text-white mb-4"
-            >
-              ← Change role
-            </button>
-          )}
-
-          <div className={`p-4 rounded-xl border-2 mb-4 ${
-            selectedRole === 'civilian'
-              ? 'bg-blue-500/10 border-blue-500/30'
-              : 'bg-orange-500/10 border-orange-500/30'
-          }`}>
-            <div className="flex items-center gap-2">
-              {selectedRole === 'civilian' ? (
-                <User className="w-5 h-5 text-blue-400" />
-              ) : (
-                <Shield className="w-5 h-5 text-orange-400" />
-              )}
-              <p className="font-bold text-sm">
-                {selectedRole === 'civilian' ? tr('register.civilianRegistration') : tr('register.serviceRegistration')}
-              </p>
+  if (forcedRole === 'service') {
+    return (
+      <div className="flex h-full flex-col bg-white px-[30px] pb-8 pt-[92px] text-[#0b3850]">
+        <div className="auth-enter">
+          <div className="mb-10 flex justify-end">
+            <div className="auth-float flex h-16 w-16 items-center justify-center rounded-lg">
+              <ShieldPlus className="h-12 w-12 text-[#0b3850]" />
             </div>
           </div>
+          <h1 className="text-[30px] font-extrabold leading-tight">Service account</h1>
+          <p className="mt-3 text-[16px] leading-7 text-[#9aa3b1]">
+            Emergency service accounts are created by admin. Use one of the demo responder accounts on the login screen.
+          </p>
+          <div className="mt-8 rounded-2xl bg-[#f4f8fb] p-5 text-[13px] leading-5 text-[#6f8494]">
+            Medic, Fire Fighter, and Police access are assigned separately so each dashboard only shows reports for its own role.
+          </div>
+        </div>
+        <button
+          onClick={onBackToLogin}
+          className="mt-auto h-[59px] w-full rounded-xl bg-[#0b3850] text-[16px] font-bold text-white transition hover:bg-[#123f59]"
+        >
+          Back to service login
+        </button>
+      </div>
+    );
+  }
 
+  return (
+    <div className="app-scrollbar flex h-full flex-col overflow-y-auto bg-white text-[#0b3850]">
+      <div className="auth-enter flex items-start justify-between px-[30px] pb-5 pt-[92px]">
+        <div>
+          <h1 className="text-[30px] font-extrabold tracking-tight">Create account</h1>
+          <p className="mt-2 text-[15px] leading-6 text-[#9aa3b1]">Citizen access for emergency reporting.</p>
+        </div>
+        <div className="auth-float flex h-16 w-16 items-center justify-center rounded-lg">
+          <ShieldPlus className="h-12 w-12 text-[#0b3850]" />
+        </div>
+      </div>
+
+      <div className="mx-auto w-full max-w-sm flex-1 px-[30px] pb-8 pt-2">
           <div className="space-y-3">
             {/* Name */}
             <div>
-              <label className="block text-xs font-medium mb-1 text-gray-300">{tr('register.fullName')} *</label>
+              <label className="mb-2 block text-[14px] font-medium">{tr('register.fullName')}</label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="John Doe"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                className="h-[58px] w-full rounded-xl border border-[#d7dbe0] bg-white px-5 text-[16px] text-[#0b3850] placeholder:text-[#8a8a8a] focus:border-[#6da5c4] focus:outline-none"
               />
             </div>
 
             {/* Email */}
             <div>
-              <label className="block text-xs font-medium mb-1 text-gray-300">{tr('common.email')} *</label>
+              <label className="mb-2 block text-[14px] font-medium">Email</label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <Mail className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9aa3b1]" />
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="your.email@example.com"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 pr-3 py-2.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                  className="h-[58px] w-full rounded-xl border border-[#d7dbe0] bg-white py-3 pl-11 pr-4 text-[16px] text-[#0b3850] placeholder:text-[#8a8a8a] focus:border-[#6da5c4] focus:outline-none"
                 />
               </div>
             </div>
 
             {/* Phone */}
             <div>
-              <label className="block text-xs font-medium mb-1 text-gray-300">{tr('register.phone')} *</label>
+              <label className="mb-2 block text-[14px] font-medium">{tr('register.phone')}</label>
               <input
                 type="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder={country?.phonePlaceholder ?? '+Country code phone number'}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                className="h-[58px] w-full rounded-xl border border-[#d7dbe0] bg-white px-5 text-[16px] text-[#0b3850] placeholder:text-[#8a8a8a] focus:border-[#6da5c4] focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium mb-1 text-gray-300">{tr('register.identityDocument')} *</label>
+              <label className="mb-2 block text-[14px] font-medium">ID Number</label>
               <div className="grid grid-cols-[0.9fr_1.4fr] gap-2">
                 <select
                   value={identityType}
                   onChange={(e) => setIdentityType(e.target.value as typeof identityType)}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="h-[58px] w-full rounded-xl border border-[#d7dbe0] bg-white px-3 text-[14px] text-[#8a8a8a] focus:border-[#6da5c4] focus:outline-none"
                 >
                   <option value="national-id">National ID</option>
                   <option value="passport">Passport</option>
                   <option value="drivers-license">Driver's License</option>
                 </select>
                 <div className="relative">
-                  <IdCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                  <IdCard className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9aa3b1]" />
                   <input
                     value={identityNumber}
                     onChange={(e) => setIdentityNumber(e.target.value)}
                     placeholder="Document number"
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 pr-3 py-2.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="h-[58px] w-full rounded-xl border border-[#d7dbe0] bg-white py-3 pl-10 pr-3 text-[14px] text-[#0b3850] placeholder:text-[#8a8a8a] focus:border-[#6da5c4] focus:outline-none"
                   />
                 </div>
               </div>
-              <p className="mt-1 text-xs text-gray-500">{tr('register.identityNote')}</p>
+              <p className="hidden mt-1 text-xs text-gray-500">{tr('register.identityNote')}</p>
             </div>
-
-            {/* Service Type (Emergency Service Only) */}
-            {selectedRole === 'service' && (
-              <div>
-                <label className="block text-xs font-medium mb-1 text-gray-300">Service Type *</label>
-                <select
-                  value={serviceType}
-                  onChange={(e) => setServiceType(e.target.value as 'ambulance' | 'fire' | 'police')}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-                >
-                  <option value="ambulance">Medical / Ambulance</option>
-                  <option value="fire">Fire Department</option>
-                  <option value="police">Police</option>
-                </select>
-              </div>
-            )}
-
-            {/* Credential Photo (Emergency Service Only) */}
-            {selectedRole === 'service' && (
-              <div>
-                <label className="block text-xs font-medium mb-1 text-gray-300">Credential Verification *</label>
-                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 mb-2">
-                  <div className="flex items-start gap-2">
-                    <AlertCircle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
-                    <p className="text-xs text-yellow-300">
-                      Upload a clear photo of your official ID badge, certification, or credentials.
-                      This will be verified by our team.
-                    </p>
-                  </div>
-                </div>
-
-                {credentialPhoto ? (
-                  <div className="relative group">
-                    <img
-                      src={credentialPhoto}
-                      alt="Credential"
-                      className="w-full h-40 object-cover rounded-lg border border-gray-700"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent rounded-lg opacity-0 group-hover:opacity-100 transition flex items-end p-3">
-                      <button
-                        onClick={() => setCredentialPhoto(null)}
-                        className="w-full bg-red-500/90 hover:bg-red-500 text-white py-2 rounded-lg text-sm font-medium transition"
-                      >
-                        Remove Photo
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <label className="flex flex-col items-center justify-center h-40 border-2 border-dashed border-gray-700 rounded-lg cursor-pointer hover:border-orange-500/50 hover:bg-gray-800/30 transition group">
-                    <div className="bg-orange-500/10 p-3 rounded-full mb-2 group-hover:bg-orange-500/20 transition">
-                      <Camera className="w-6 h-6 text-orange-400" />
-                    </div>
-                    <span className="text-xs text-gray-400 font-medium">Upload Credential Photo</span>
-                    <span className="text-xs text-gray-500 mt-1">Badge, ID, or Certificate</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleCredentialUpload}
-                      className="hidden"
-                    />
-                  </label>
-                )}
-              </div>
-            )}
 
             {/* Password */}
             <div>
-              <label className="block text-xs font-medium mb-1 text-gray-300">{tr('common.password')} *</label>
+              <label className="mb-2 block text-[14px] font-medium">{tr('common.password')}</label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <Lock className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9aa3b1]" />
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 pr-3 py-2.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                  className="h-[58px] w-full rounded-xl border border-[#d7dbe0] bg-white py-3 pl-11 pr-4 text-[16px] text-[#0b3850] placeholder:text-[#8a8a8a] focus:border-[#6da5c4] focus:outline-none"
                 />
               </div>
             </div>
 
             {/* Confirm Password */}
             <div>
-              <label className="block text-xs font-medium mb-1 text-gray-300">{tr('register.confirmPassword')} *</label>
+              <label className="mb-2 block text-[14px] font-medium">{tr('register.confirmPassword')}</label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <Lock className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9aa3b1]" />
                 <input
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 pr-3 py-2.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                  className="h-[58px] w-full rounded-xl border border-[#d7dbe0] bg-white py-3 pl-11 pr-4 text-[16px] text-[#0b3850] placeholder:text-[#8a8a8a] focus:border-[#6da5c4] focus:outline-none"
                 />
               </div>
             </div>
@@ -354,24 +199,19 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole, country,
             {/* Register Button */}
             <button
               onClick={handleRegister}
-              className={`w-full py-3 rounded-lg font-bold transition-all shadow-lg mt-4 ${
-                selectedRole === 'civilian'
-                  ? 'bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 shadow-blue-500/50'
-                  : 'bg-gradient-to-r from-orange-500 to-orange-700 hover:from-orange-600 hover:to-orange-800 shadow-orange-500/50'
-              }`}
+              className="mt-8 h-[59px] w-full rounded-xl bg-[#6da5c4] text-[16px] font-bold text-white transition-all hover:bg-[#5d99b8]"
             >
-              {selectedRole === 'service' ? tr('register.submitVerification') : tr('register.createAccount')}
+              {tr('register.createAccount')}
             </button>
 
             <button
               onClick={onBackToLogin}
-              className="w-full text-sm text-gray-400 hover:text-white transition mt-3"
+              className="mt-5 w-full text-[14px] text-[#6f8494] transition hover:text-[#0b3850]"
             >
-              {tr('register.alreadyHaveAccount')} <span className="text-blue-400">{tr('common.login')}</span>
+              Already have an account? <span className="font-bold text-[#0b3850]">{tr('common.login')}</span>
             </button>
           </div>
         </div>
-      )}
     </div>
   );
 }

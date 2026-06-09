@@ -3,6 +3,18 @@ import { Camera, MapPin, Send, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { calculateInjuryScale, getInjuryLabel } from '../utils/injuryScaleCalculator';
 
+const ACCEPTED_IMAGE_TYPES = [
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/heic',
+  'image/heif'
+];
+
+const ACCEPTED_IMAGE_EXTENSIONS = '.jpg,.jpeg,.png,.webp,.gif,.heic,.heif';
+
 export function CivilianReport() {
   const [photo, setPhoto] = useState<string | null>(null);
   const [description, setDescription] = useState('');
@@ -13,6 +25,11 @@ export function CivilianReport() {
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+        toast.error('Please upload a JPG, JPEG, PNG, WEBP, GIF, HEIC, or HEIF image.');
+        return;
+      }
+
       const reader = new FileReader();
       reader.onloadend = () => {
         setPhoto(reader.result as string);
@@ -100,7 +117,7 @@ export function CivilianReport() {
               <span className="text-sm text-gray-500">Tap to capture or upload</span>
               <input
                 type="file"
-                accept="image/*"
+                accept={`${ACCEPTED_IMAGE_EXTENSIONS},${ACCEPTED_IMAGE_TYPES.join(',')}`}
                 capture="environment"
                 onChange={handlePhotoUpload}
                 className="hidden"

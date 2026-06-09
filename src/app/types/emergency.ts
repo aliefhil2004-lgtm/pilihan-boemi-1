@@ -17,6 +17,16 @@ export interface AuditEntry {
   timestamp: string;
 }
 
+export interface PrivacyRegion {
+  label: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  confidence?: number;
+  normalized?: boolean;
+}
+
 export interface StoredEmergencyReport {
   id: string;
   photo: string | null;
@@ -35,6 +45,7 @@ export interface StoredEmergencyReport {
   auditTrail?: AuditEntry[];
   reporterPhone?: string;
   detectedIndicators?: string[];
+  privacyRegions?: PrivacyRegion[];
   countryCode?: string;
 }
 

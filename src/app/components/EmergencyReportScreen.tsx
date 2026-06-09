@@ -1,13 +1,53 @@
 import { useState, useEffect, useRef } from 'react';
-import { Camera, MapPin, Send, Navigation, FileText, Upload, ScanSearch, X } from 'lucide-react';
+import { ArrowLeft, Camera, RotateCw, Send, Upload, ScanSearch, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { reverseGeocode } from '../services/geocoding';
 import { t, type Language } from '../i18n';
+import { analyzeEmergencyImage } from '../roboflow';
 
 interface EmergencyReportScreenProps {
   onSubmit: (data: { photo: string | null; description: string; location: string }) => void;
+  onBack?: () => void;
   defaultLocation?: string;
   language: Language;
+}
+
+interface LiveCameraDetection {
+  incidentType: string;
+  severityScore: number;
+  description?: string;
+}
+
+const ACCEPTED_IMAGE_TYPES = [
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/heic',
+  'image/heif'
+];
+
+const ACCEPTED_IMAGE_EXTENSIONS = '.jpg,.jpeg,.png,.webp,.gif,.heic,.heif';
+
+function extractLiveCameraDetection(value: unknown): LiveCameraDetection | null {
+  if (!value || typeof value !== 'object') return null;
+  const output = (value as {
+    outputs?: Array<{
+      incident_type?: unknown;
+      severity_score?: unknown;
+      description?: unknown;
+    }>;
+  }).outputs?.[0];
+
+  if (!output || typeof output.incident_type !== 'string') return null;
+  if (output.incident_type.toLowerCase() === 'none') return null;
+
+  return {
+    incidentType: output.incident_type,
+    severityScore: typeof output.severity_score === 'number' ? output.severity_score : 0,
+    description: typeof output.description === 'string' ? output.description : undefined
+  };
 }
 
 function preparePhotoForAnalysis(file: File): Promise<string> {
@@ -32,15 +72,19 @@ function preparePhotoForAnalysis(file: File): Promise<string> {
   });
 }
 
-export function EmergencyReportScreen({ onSubmit, defaultLocation, language }: EmergencyReportScreenProps) {
+export function EmergencyReportScreen({ onSubmit, onBack, defaultLocation, language }: EmergencyReportScreenProps) {
   const [photo, setPhoto] = useState<string | null>(null);
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState(defaultLocation || '');
   const [isLocating, setIsLocating] = useState(!defaultLocation);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [liveDetection, setLiveDetection] = useState<LiveCameraDetection | null>(null);
+  const [isLiveAnalyzing, setIsLiveAnalyzing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
+  const liveAnalysisBusyRef = useRef(false);
   const tr = (key: Parameters<typeof t>[1]) => t(language, key);
 
   useEffect(() => {
@@ -64,11 +108,47 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation, language }: E
     return () => cameraStreamRef.current?.getTracks().forEach(track => track.stop());
   }, []);
 
+  useEffect(() => {
+    if (!isCameraOpen) return undefined;
+
+    const analyzeCurrentFrame = async () => {
+      const video = videoRef.current;
+      if (liveAnalysisBusyRef.current || !video?.videoWidth || !video.videoHeight) return;
+
+      liveAnalysisBusyRef.current = true;
+      setIsLiveAnalyzing(true);
+      try {
+        const canvas = document.createElement('canvas');
+        const maxDimension = 640;
+        const scale = Math.min(1, maxDimension / Math.max(video.videoWidth, video.videoHeight));
+        canvas.width = Math.round(video.videoWidth * scale);
+        canvas.height = Math.round(video.videoHeight * scale);
+        canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const result = await analyzeEmergencyImage(canvas.toDataURL('image/jpeg', 0.68));
+        setLiveDetection(extractLiveCameraDetection(result));
+      } catch {
+        setLiveDetection(null);
+      } finally {
+        liveAnalysisBusyRef.current = false;
+        setIsLiveAnalyzing(false);
+      }
+    };
+
+    const firstRun = window.setTimeout(analyzeCurrentFrame, 900);
+    const interval = window.setInterval(analyzeCurrentFrame, 3000);
+    return () => {
+      window.clearTimeout(firstRun);
+      window.clearInterval(interval);
+    };
+  }, [isCameraOpen]);
+
   const closeCamera = () => {
     cameraStreamRef.current?.getTracks().forEach(track => track.stop());
     cameraStreamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     setIsCameraOpen(false);
+    setLiveDetection(null);
+    setIsLiveAnalyzing(false);
   };
 
   const openCamera = async () => {
@@ -115,6 +195,11 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation, language }: E
     e.target.value = '';
 
     if (file) {
+      if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+        toast.error('Please upload a JPG, JPEG, PNG, WEBP, GIF, HEIC, or HEIF image.');
+        return;
+      }
+
       try {
         setPhoto(await preparePhotoForAnalysis(file));
         toast.success(tr('report.photoUploaded'));
@@ -125,48 +210,53 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation, language }: E
   };
 
   const handleSubmit = () => {
-  if (!photo && !description.trim()) {
-    toast.error(tr('report.needPhotoOrDescription'));
-    return;
-  }
+    if (isSubmitting) return;
 
-  onSubmit({
-    photo,
-    description: description || tr('report.defaultDescription'),
-    location
-  });
-};
+    if (!photo && !description.trim()) {
+      toast.error(tr('report.needPhotoOrDescription'));
+      return;
+    }
+
+    setIsSubmitting(true);
+    Promise.resolve(
+      onSubmit({
+        photo,
+        description: description || tr('report.defaultDescription'),
+        location
+      })
+    ).catch(() => {
+      setIsSubmitting(false);
+    });
+  };
 
   return (
-    <div className="flex h-full flex-col bg-gradient-to-b from-gray-900 via-gray-900 to-black pb-16 text-white">
-      {/* Header */}
-      <div className="border-b border-gray-800 px-5 py-5 sm:px-6">
-        <h1 className="mb-1 text-2xl font-bold">{tr('report.title')}</h1>
-        <p className="text-sm text-gray-400">{tr('report.subtitle')}</p>
+    <div className="flex h-full flex-col bg-white text-[#0b3850]">
+      <div className="flex h-[88px] shrink-0 items-center bg-white px-7 pt-[36px] shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+        <button
+          type="button"
+          onClick={onBack}
+          className="mr-4 flex h-7 w-7 items-center justify-center rounded-lg text-[#0b3850] transition hover:bg-slate-100"
+          aria-label="Back"
+        >
+          <ArrowLeft className="h-[18px] w-[18px]" />
+        </button>
+        <h1 className="text-[17px] font-extrabold leading-6">{tr('report.title')}</h1>
       </div>
 
-      {/* Content */}
-      <div className="app-scrollbar flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
-        {/* GPS Location Card */}
-        <div className="rounded-xl border border-gray-700/80 bg-gray-800/60 p-4 sm:p-5">
-          <div className="flex items-start gap-3 mb-3">
-            <div className="bg-green-500/20 p-2 rounded-lg">
-              <MapPin className="w-5 h-5 text-green-400" />
-            </div>
-            <div className="flex-1">
-              <h3 className="font-semibold mb-1">{tr('report.locationTitle')}</h3>
-              <p className="text-sm text-gray-400">{tr('report.locationSubtitle')}</p>
-            </div>
+      <div className="app-scrollbar flex-1 space-y-4 overflow-y-auto px-[26px] pb-24 pt-5">
+        <div>
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-[14px] font-extrabold leading-6">{tr('report.locationTitle')}</h3>
             {isLocating && (
-              <div className="flex items-center gap-2 text-xs text-blue-400">
-                <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+              <div className="flex items-center gap-2 text-xs text-[#6da5c4]">
+                <div className="h-2 w-2 animate-pulse rounded-full bg-[#6da5c4]"></div>
                 {tr('report.locating')}
               </div>
             )}
           </div>
 
-          <div className="bg-gray-900/50 rounded-xl p-3 border border-gray-700/50">
-            <p className="text-sm text-green-300">
+          <div className="rounded-xl border border-[#d7dbe0] bg-[#fafbfc] px-5 py-3">
+            <p className="truncate text-[13px] text-[#0b3850]">
               {location || tr('report.detectingLocation')}
             </p>
           </div>
@@ -188,31 +278,22 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation, language }: E
                 );
               }
             }}
-            className="mt-3 w-full bg-gray-700/50 hover:bg-gray-700 text-white py-2 rounded-lg text-sm font-medium transition flex items-center justify-center gap-2"
+            className="mt-3 flex h-[50px] w-full items-center justify-center gap-2 rounded-lg bg-[#6da5c4] px-5 text-[14px] font-bold text-white transition hover:bg-[#5d99b8]"
           >
-            <Navigation className="w-4 h-4" />
+            <RotateCw className="h-[18px] w-[18px]" />
             {tr('report.refreshLocation')}
           </button>
         </div>
 
-        {/* Photo Upload Section */}
-        <div className="rounded-xl border border-gray-700/80 bg-gray-800/60 p-4 sm:p-5">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="bg-purple-500/20 p-2 rounded-lg">
-              <Camera className="w-5 h-5 text-purple-400" />
-            </div>
-            <div>
-              <h3 className="font-semibold">{tr('report.photoTitle')}</h3>
-              <p className="text-xs text-gray-400">{tr('report.photoSubtitle')}</p>
-            </div>
-          </div>
+        <div>
+          <h3 className="mb-3 text-[14px] font-extrabold leading-6">Photo</h3>
 
           {photo ? (
             <div className="relative group">
               <img
                 src={photo}
                 alt="Emergency"
-                className="w-full h-48 object-cover rounded-xl border border-gray-700"
+                className="h-[140px] w-full rounded-xl border border-[#d7dbe0] object-cover"
               />
               <button
                 onClick={() => setPhoto(null)}
@@ -224,8 +305,25 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation, language }: E
             </div>
           ) : isCameraOpen ? (
             <div className="space-y-3">
-              <div className="relative overflow-hidden rounded-xl border border-gray-700 bg-black">
-                <video ref={videoRef} autoPlay playsInline muted className="h-56 w-full object-cover" />
+              <div className="relative overflow-hidden rounded-xl border border-[#d7dbe0] bg-black">
+                <video ref={videoRef} autoPlay playsInline muted className="h-[180px] w-full object-cover" />
+                <div className="absolute left-3 top-3 max-w-[calc(100%-4.5rem)] rounded-xl border border-white/10 bg-black/70 px-3 py-2 text-xs text-white shadow-lg backdrop-blur-sm">
+                  <p className="font-semibold text-blue-200">{tr('report.liveAnalysisTitle')}</p>
+                  {liveDetection ? (
+                    <div className="mt-1 space-y-0.5">
+                      <p>
+                        {tr('report.liveDetected')}: <span className="font-semibold text-green-300">{liveDetection.incidentType}</span>
+                      </p>
+                      <p>
+                        {tr('report.liveSeverity')}: <span className="font-semibold text-yellow-300">{liveDetection.severityScore}/10</span>
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-gray-300">
+                      {isLiveAnalyzing ? tr('report.liveAnalyzing') : tr('report.liveNoDetection')}
+                    </p>
+                  )}
+                </div>
                 <button
                   type="button"
                   onClick={closeCamera}
@@ -238,26 +336,28 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation, language }: E
               <button
                 type="button"
                 onClick={takePhoto}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-purple-600 py-3 text-sm font-semibold text-white transition hover:bg-purple-500"
+                className="flex h-[50px] w-full items-center justify-center gap-2 rounded-lg bg-[#6da5c4] text-[14px] font-semibold text-white transition hover:bg-[#5d99b8]"
               >
                 <Camera className="h-4 w-4" />
                 {tr('report.takePhoto')}
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-3">
               <button
                 type="button"
                 onClick={openCamera}
-                className="flex items-center justify-center gap-2 rounded-xl bg-purple-600 py-3 text-sm font-semibold text-white transition hover:bg-purple-500"
+                className="flex h-[140px] w-full flex-col items-center justify-center gap-2.5 rounded-xl border-2 border-dashed border-[#d7dbe0] bg-[#fafbfc] text-[#9aa3b1] transition hover:border-[#6da5c4]"
               >
-                <Camera className="h-4 w-4" />
-                {tr('report.openCamera')}
+                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white">
+                  <Camera className="h-5 w-5" />
+                </span>
+                Take a Photo
               </button>
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="flex items-center justify-center gap-2 rounded-xl border border-gray-700 bg-gray-700 py-3 text-sm font-semibold text-white transition hover:bg-gray-600"
+                className="flex h-[50px] w-full items-center justify-center gap-2 rounded-lg bg-[#6da5c4] text-[14px] font-bold text-white transition hover:bg-[#5d99b8]"
               >
                 <Upload className="h-4 w-4" />
                 {tr('report.uploadPhoto')}
@@ -265,7 +365,7 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation, language }: E
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept={`${ACCEPTED_IMAGE_EXTENSIONS},${ACCEPTED_IMAGE_TYPES.join(',')}`}
                 onChange={handlePhotoUpload}
                 className="hidden"
               />
@@ -273,30 +373,19 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation, language }: E
           )}
         </div>
 
-        {/* Description Input */}
-        <div className="rounded-xl border border-gray-700/80 bg-gray-800/60 p-4 sm:p-5">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="bg-blue-500/20 p-2 rounded-lg">
-              <FileText className="w-5 h-5 text-blue-400" />
-            </div>
-            <div>
-              <h3 className="font-semibold">{tr('report.describeTitle')}</h3>
-              <p className="text-xs text-gray-400">
-                {tr('report.describeSubtitle')}
-                </p>
-            </div>
-          </div>
+        <div>
+          <h3 className="mb-3 text-[14px] font-extrabold leading-6">Emergency Describe (Optional)</h3>
 
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder={tr('report.describePlaceholder')}
-            className="w-full h-32 bg-gray-900/50 border border-gray-700 rounded-xl p-4 text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+            className="h-[100px] w-full resize-none rounded-xl border border-[#d7dbe0] bg-[#fafbfc] p-4 text-[13px] text-[#0b3850] placeholder:text-[#9aa3b1] transition focus:border-[#6da5c4] focus:outline-none"
           />
 
           {description && (
-            <div className="mt-3 flex items-center gap-2 text-xs text-green-400">
-              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+            <div className="mt-3 flex items-center gap-2 text-xs text-emerald-600">
+              <div className="h-2 w-2 animate-pulse rounded-full bg-emerald-500"></div>
               {tr('report.descriptionReady')}
             </div>
           )}
@@ -304,12 +393,12 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation, language }: E
 
         {/* Assessment Indicator */}
         {(photo || description) && (
-          <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-4">
-            <div className="flex items-start gap-3">
-              <ScanSearch className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
+          <div className="rounded-lg bg-[#9cc4d8] px-5 py-4 text-white">
+            <div className="flex items-start gap-3.5">
+              <ScanSearch className="mt-0.5 h-5 w-5 flex-shrink-0 text-white" />
               <div className="flex-1">
-                <p className="text-sm font-medium text-blue-300 mb-1">{tr('report.assessmentReady')}</p>
-                <p className="text-xs text-gray-400">
+                <p className="mb-1 text-[13px] font-bold leading-4 text-white">{tr('report.assessmentReady')}</p>
+                <p className="text-[12px] leading-4 text-white">
                   {photo && description
                     ? tr('report.assessmentDetailPhotoDescription')
                     : photo
@@ -320,16 +409,15 @@ export function EmergencyReportScreen({ onSubmit, defaultLocation, language }: E
             </div>
           </div>
         )}
-      </div>
 
-      {/* Submit Button */}
-      <div className="border-t border-gray-800 bg-gray-950/90 p-4 backdrop-blur-sm">
         <button
+          type="button"
+          disabled={isSubmitting}
           onClick={handleSubmit}
-          className="group flex w-full items-center justify-center gap-3 rounded-lg bg-red-600 py-3.5 font-bold text-white shadow-lg transition hover:bg-red-500 disabled:bg-gray-700 disabled:shadow-none"
+          className="group flex h-[50px] w-full items-center justify-center gap-2 rounded-lg bg-[#ff3833] text-[14px] font-bold text-white shadow-lg shadow-red-200 transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-70"
         >
-          <Send className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
-          {tr('report.submit')}
+          <Send className="h-[18px] w-[18px] transition-transform group-hover:translate-x-1" />
+          {isSubmitting ? 'Sending...' : tr('report.submit')}
         </button>
       </div>
     </div>

@@ -9,13 +9,16 @@ interface VercelResponse {
   setHeader: (name: string, value: string) => void;
 }
 
-const HF_MODEL = 'joeddav/xlm-roberta-large-xnli';
+const HF_MODEL = process.env.HF_NLP_MODEL || 'joeddav/xlm-roberta-large-xnli';
 const candidateLabels = [
   'medical emergency',
   'fire rescue emergency',
   'police security emergency',
   'natural disaster',
-  'lost property non emergency'
+  'lost property non emergency',
+  'threatening incident',
+  'dangerous animal threat',
+  'drug related crime'
 ];
 
 function parseBody(value: unknown): Record<string, unknown> {
@@ -38,6 +41,22 @@ function normalizeResult(value: unknown) {
     .filter(item => Number.isFinite(item.score));
 }
 
+function normalizeClassificationOutput(value: unknown) {
+  if (!value || typeof value !== 'object') return [];
+
+  const payload = value as {
+    label?: unknown;
+    labels?: unknown;
+    scores?: unknown;
+  };
+
+  if (typeof payload.label === 'string' && Number.isFinite(Number(payload.score))) {
+    return [{ label: payload.label, score: Number((payload as { score?: unknown }).score ?? 0) }];
+  }
+
+  return normalizeResult(value) ?? [];
+}
+
 export default async function handler(request: VercelRequest, response: VercelResponse) {
   response.setHeader('Content-Type', 'application/json');
 
@@ -46,7 +65,8 @@ export default async function handler(request: VercelRequest, response: VercelRe
     return;
   }
 
-  if (!process.env.HUGGINGFACE_API_KEY) {
+  const apiKey = process.env.HUGGINGFACE_API_KEY;
+  if (!apiKey) {
     response.status(200).json({ available: false, classifications: [] });
     return;
   }
@@ -62,12 +82,14 @@ export default async function handler(request: VercelRequest, response: VercelRe
     const hfResponse = await fetch(`https://api-inference.huggingface.co/models/${HF_MODEL}`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         inputs: text,
-        parameters: { candidate_labels: candidateLabels, multi_label: true }
+        parameters: HF_MODEL === 'joeddav/xlm-roberta-large-xnli'
+          ? { candidate_labels: candidateLabels, multi_label: true }
+          : undefined
       })
     });
     const result = await hfResponse.json();
@@ -80,7 +102,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
     response.status(200).json({
       available: true,
       model: HF_MODEL,
-      classifications: normalizeResult(result) ?? []
+      classifications: normalizeClassificationOutput(result)
     });
   } catch (error) {
     response.status(200).json({

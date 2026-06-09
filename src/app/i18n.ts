@@ -102,6 +102,11 @@ const translations = {
     'report.photoCaptured': 'Photo captured and ready for image assessment',
     'report.photoUploaded': 'Photo uploaded and ready for image assessment',
     'report.photoFailed': 'Unable to prepare this photo. Please choose another image.',
+    'report.liveAnalysisTitle': 'Live camera analysis',
+    'report.liveAnalyzing': 'Analyzing camera frame...',
+    'report.liveNoDetection': 'No clear emergency object detected yet',
+    'report.liveDetected': 'Detected',
+    'report.liveSeverity': 'Severity',
     'result.alertSent': 'Alert Sent',
     'result.received': 'Emergency services have received your report',
     'result.coordinated': 'Help is being coordinated',
@@ -124,7 +129,8 @@ const translations = {
     'map.publicCctv': 'public CCTV',
     'nav.home': 'Home',
     'nav.report': 'Report',
-    'nav.history': 'History'
+    'nav.history': 'History',
+    'nav.profile': 'Profile'
   },
   id: {
     'common.email': 'Email',
@@ -222,6 +228,11 @@ const translations = {
     'report.photoCaptured': 'Foto diambil dan siap dianalisis',
     'report.photoUploaded': 'Foto diunggah dan siap dianalisis',
     'report.photoFailed': 'Gagal menyiapkan foto. Pilih gambar lain.',
+    'report.liveAnalysisTitle': 'Analisis kamera langsung',
+    'report.liveAnalyzing': 'Menganalisis frame kamera...',
+    'report.liveNoDetection': 'Belum ada objek darurat yang jelas',
+    'report.liveDetected': 'Terdeteksi',
+    'report.liveSeverity': 'Tingkat bahaya',
     'result.alertSent': 'Laporan Terkirim',
     'result.received': 'Layanan darurat sudah menerima laporan Anda',
     'result.coordinated': 'Bantuan sedang dikoordinasikan',
@@ -244,7 +255,8 @@ const translations = {
     'map.publicCctv': 'CCTV publik',
     'nav.home': 'Beranda',
     'nav.report': 'Lapor',
-    'nav.history': 'Riwayat'
+    'nav.history': 'Riwayat',
+    'nav.profile': 'Profil'
   }
 } as const;
 

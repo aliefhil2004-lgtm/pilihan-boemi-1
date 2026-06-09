@@ -4,11 +4,13 @@ import {
   signInWithEmailAndPassword,
   signOut,
   updateProfile,
+  getIdTokenResult,
   type User
 } from 'firebase/auth';
-import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { firebaseAuth, firebaseEnabled, firestore } from './firebase';
 import type { AseanCountryCode } from '../config/asean';
+import type { ServiceType } from '../types/emergency';
 
 interface CitizenRegisterData {
   email: string;
@@ -20,11 +22,72 @@ interface CitizenRegisterData {
   countryCode: AseanCountryCode;
 }
 
+export interface UserProfile {
+  uid: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  identityNumber?: string;
+  role?: string;
+  serviceType?: ServiceType;
+}
+
+interface ServiceLoginResult {
+  user: User;
+  serviceType: ServiceType;
+  profile: UserProfile;
+}
+
+interface FirestoreUserProfile {
+  role?: unknown;
+  serviceType?: unknown;
+  name?: unknown;
+  email?: unknown;
+  phone?: unknown;
+  identityNumber?: unknown;
+}
+
+function isServiceType(value: unknown): value is ServiceType {
+  return value === 'ambulance' || value === 'fire' || value === 'police';
+}
+
+function getServiceTypeFromRole(role: unknown): ServiceType | null {
+  if (role === 'medic' || role === 'medical') return 'ambulance';
+  if (isServiceType(role)) return role;
+  return null;
+}
+
 function requireAuth() {
   if (!firebaseEnabled || !firebaseAuth) {
     throw new Error('Firebase is not configured. Check your VITE_FIREBASE_* environment variables.');
   }
   return firebaseAuth;
+}
+
+function normalizeUserProfile(user: User, data?: FirestoreUserProfile | null): UserProfile {
+  return {
+    uid: user.uid,
+    name: typeof data?.name === 'string' ? data.name : user.displayName ?? undefined,
+    email: typeof data?.email === 'string' ? data.email : user.email ?? undefined,
+    phone: typeof data?.phone === 'string' ? data.phone : undefined,
+    identityNumber: typeof data?.identityNumber === 'string' ? data.identityNumber : undefined,
+    role: typeof data?.role === 'string' ? data.role : undefined,
+    serviceType: isServiceType(data?.serviceType) ? data.serviceType : undefined
+  };
+}
+
+export async function getUserProfile(user: User): Promise<UserProfile> {
+  if (!firestore) return normalizeUserProfile(user);
+
+  const uidProfile = await getDoc(doc(firestore, 'users', user.uid));
+  if (uidProfile.exists()) return normalizeUserProfile(user, uidProfile.data());
+
+  if (user.email) {
+    const emailProfile = await getDoc(doc(firestore, 'users', user.email));
+    if (emailProfile.exists()) return normalizeUserProfile(user, emailProfile.data());
+  }
+
+  return normalizeUserProfile(user);
 }
 
 export async function registerCitizenAccount(data: CitizenRegisterData): Promise<User> {
@@ -54,6 +117,43 @@ export async function loginCitizenAccount(email: string, password: string): Prom
   const auth = requireAuth();
   const credential = await signInWithEmailAndPassword(auth, email, password);
   return credential.user;
+}
+
+export async function loginServiceAccount(email: string, password: string): Promise<ServiceLoginResult> {
+  const auth = requireAuth();
+  const credential = await signInWithEmailAndPassword(auth, email, password);
+  const token = await getIdTokenResult(credential.user);
+
+  let role = token.claims.role;
+  let serviceType: unknown = token.claims.serviceType;
+
+  const profile = await getUserProfile(credential.user);
+  role = profile.role ?? role;
+  serviceType = profile.serviceType ?? serviceType;
+
+  const normalizedServiceType = isServiceType(serviceType)
+    ? serviceType
+    : getServiceTypeFromRole(role);
+
+  if (role !== 'service' && !getServiceTypeFromRole(role)) {
+    await signOut(auth);
+    throw new Error('Akun ini belum diberi akses layanan darurat oleh admin.');
+  }
+
+  if (!normalizedServiceType) {
+    await signOut(auth);
+    throw new Error('Role layanan belum lengkap. Admin perlu mengisi serviceType: ambulance, fire, atau police.');
+  }
+
+  return {
+    user: credential.user,
+    serviceType: normalizedServiceType,
+    profile: {
+      ...profile,
+      role: 'service',
+      serviceType: normalizedServiceType
+    }
+  };
 }
 
 export async function logoutFirebaseAccount() {

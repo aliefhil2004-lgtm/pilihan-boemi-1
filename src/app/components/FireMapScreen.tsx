@@ -47,21 +47,18 @@ export function FireMapScreen({ userLocation, countryCode, onBack, language }: F
     reports.filter(report => getReportServices(report).includes(service)).length;
 
   return (
-    <div className="flex flex-col h-full bg-gray-900 text-white">
-      {/* Header */}
-      <div className="border-b border-blue-500/30 bg-gradient-to-br from-blue-900/30 to-indigo-900/20 p-4">
-        <div className="flex items-center gap-3 mb-2">
-          <button onClick={onBack} className="flex items-center gap-2 rounded-lg border border-gray-600 bg-gray-900/50 px-3 py-2 text-sm font-semibold hover:bg-gray-900/80" aria-label="Back to response center">
-            <ArrowLeft className="h-4 w-4" /> {tr('common.back')}
+    <div className="flex h-full flex-col bg-white text-[#0b3850]">
+      <div className="flex h-[104px] items-end gap-3 bg-white px-7 pb-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
+          <button onClick={onBack} className="flex h-9 w-9 items-center justify-center rounded-lg text-[#0b3850] hover:bg-slate-100" aria-label="Back to response center">
+            <ArrowLeft className="h-[19px] w-[19px]" />
           </button>
-          <div className="bg-blue-500/20 p-2 rounded-lg">
-            <MapPinned className="w-5 h-5 text-blue-400" />
+          <div className="hidden rounded-lg bg-blue-500/15 p-2">
+            <MapPinned className="h-5 w-5 text-[#2f80ff]" />
           </div>
           <div>
-            <h1 className="text-lg font-bold">{tr('map.title')}</h1>
-            <p className="text-xs text-gray-400">{tr('map.subtitle')}</p>
+            <h1 className="text-[18px] font-extrabold">{tr('map.title')}</h1>
+            <p className="hidden text-xs text-slate-400">{tr('map.subtitle')}</p>
           </div>
-        </div>
       </div>
 
       <div className="relative flex-1 min-h-72">
@@ -71,52 +68,52 @@ export function FireMapScreen({ userLocation, countryCode, onBack, language }: F
           cameras={cameras}
           onCameraSelect={setSelectedCamera}
         />
-        <div className="absolute left-3 top-3 z-10 rounded-xl border border-gray-700 bg-gray-950/90 p-3 text-xs shadow-lg backdrop-blur">
-          <div className="mb-2 flex items-center gap-2 font-semibold text-white">
+        <div className="absolute right-5 top-6 z-10 rounded-2xl bg-[#30354f]/95 p-4 text-[13px] text-white shadow-lg backdrop-blur">
+          <div className="mb-2 flex items-center gap-2 text-[13px] font-semibold text-white">
             <AlertTriangle className="h-4 w-4 text-red-400" />
             {tr('map.dangerZones')}
           </div>
-          <div className="space-y-1.5 text-gray-300">
-            <div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-red-600/70" /> {tr('map.critical')}</div>
-            <div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-orange-500/70" /> {tr('map.high')}</div>
-            <div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-yellow-500/70" /> {tr('map.yellow')}</div>
-            <div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-green-500/70" /> {tr('map.watch')}</div>
+          <div className="space-y-2 text-gray-200">
+            <div className="flex items-center gap-2"><span className="h-3.5 w-3.5 rounded-full bg-red-600/90" /> {tr('map.critical')}</div>
+            <div className="flex items-center gap-2"><span className="h-3.5 w-3.5 rounded-full bg-orange-500/90" /> {tr('map.high')}</div>
+            <div className="flex items-center gap-2"><span className="h-3.5 w-3.5 rounded-full bg-yellow-500/90" /> {tr('map.yellow')}</div>
+            <div className="flex items-center gap-2"><span className="h-3.5 w-3.5 rounded-full bg-green-500/90" /> {tr('map.watch')}</div>
           </div>
         </div>
-        <div className="absolute right-3 top-3 z-10 rounded-xl border border-gray-700 bg-gray-950/90 px-3 py-2 text-xs shadow-lg backdrop-blur">
+        <div className="hidden absolute right-3 top-3 z-10 rounded-lg border border-slate-700 bg-slate-950/90 px-3 py-2 text-xs shadow-lg backdrop-blur">
           <span className={trafficEnabled ? 'text-emerald-300' : 'text-yellow-300'}>
             {tr('map.traffic')}: {trafficEnabled ? tr('map.live') : tr('map.apiKeyNeeded')}
           </span>
         </div>
       </div>
 
-      <div className="bg-gray-900/50 border-t border-gray-800 p-4">
-        <div className="grid grid-cols-3 gap-3">
-              <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-3">
+      <div className="absolute bottom-9 left-0 right-0 px-6">
+        <div className="grid grid-cols-3 gap-3 rounded-lg bg-[#30354f]/95 px-5 py-4 text-white shadow-lg">
+              <div>
                 <div className="flex items-center gap-2 mb-1">
                   <Ambulance className="w-4 h-4 text-blue-400" />
-                  <p className="text-xs text-gray-400">Medical</p>
+                  <p className="text-[12px] font-semibold text-sky-300">Medical</p>
                 </div>
-                <p className="text-xl font-bold text-blue-400">{countByService('ambulance')}</p>
+                <p className="text-[22px] font-bold leading-6 text-white">{countByService('ambulance')}</p>
               </div>
 
-              <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-3">
+              <div>
                 <div className="flex items-center gap-2 mb-1">
                   <Flame className="w-4 h-4 text-orange-400" />
-                  <p className="text-xs text-gray-400">Fire</p>
+                  <p className="text-[12px] font-semibold text-orange-300">Fire</p>
                 </div>
-                <p className="text-xl font-bold text-orange-400">{countByService('fire')}</p>
+                <p className="text-[22px] font-bold leading-6 text-white">{countByService('fire')}</p>
               </div>
 
-              <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-3">
+              <div>
                 <div className="flex items-center gap-2 mb-1">
                   <Shield className="w-4 h-4 text-indigo-400" />
-                  <p className="text-xs text-gray-400">Police</p>
+                  <p className="text-[12px] font-semibold text-blue-500">Police</p>
                 </div>
-                <p className="text-xl font-bold text-indigo-400">{countByService('police')}</p>
+                <p className="text-[22px] font-bold leading-6 text-white">{countByService('police')}</p>
               </div>
         </div>
-        <div className="mt-3 flex items-center justify-center gap-4 text-xs text-gray-500">
+        <div className="hidden mt-3 items-center justify-center gap-4 text-xs text-gray-500">
           <span>{reports.length} {tr('map.activeLocations')}</span>
           <span className="flex items-center gap-1.5 text-red-300">
             <AlertTriangle className="h-3.5 w-3.5" /> {reports.filter(report => report.injuryScale >= 8).length} {tr('map.criticalZones')}

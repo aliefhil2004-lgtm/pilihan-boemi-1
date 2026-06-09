@@ -1,3 +1,5 @@
+import { syncMessageToFirebase } from './firebaseSync';
+
 export interface ChatMessage {
   id: string;
   reportId: string;
@@ -30,4 +32,3 @@ export function sendMessage(message: Omit<ChatMessage, 'id' | 'timestamp'>) {
   window.dispatchEvent(new Event('emergency-chat-updated'));
   void syncMessageToFirebase(nextMessage);
 }
-import { syncMessageToFirebase } from './firebaseSync';

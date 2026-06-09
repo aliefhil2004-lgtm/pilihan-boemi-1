@@ -17,7 +17,10 @@ const labelMapping: Record<string, { service: ServiceType; type: string; baseSco
   'fire rescue emergency': { service: 'fire', type: 'Fire Emergency', baseScore: 7 },
   'police security emergency': { service: 'police', type: 'Police Emergency', baseScore: 7 },
   'natural disaster': { service: 'fire', type: 'Natural Disaster', baseScore: 8 },
-  'lost property non emergency': { service: 'police', type: 'Lost Property Report', baseScore: 2 }
+  'lost property non emergency': { service: 'police', type: 'Lost Property Report', baseScore: 2 },
+  'threatening incident': { service: 'police', type: 'Police Emergency', baseScore: 7 },
+  'dangerous animal threat': { service: 'fire', type: 'Animal Rescue', baseScore: 6 },
+  'drug related crime': { service: 'police', type: 'Police Emergency', baseScore: 8 }
 };
 
 export async function analyzeEmergencyTextWithNlp(text: string): Promise<NlpEmergencyResult | null> {

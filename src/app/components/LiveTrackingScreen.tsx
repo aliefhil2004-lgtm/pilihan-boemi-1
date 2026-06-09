@@ -14,7 +14,7 @@ interface LiveTrackingScreenProps {
   userLocation: { lat: number; lng: number };
   onOpenChat: () => void;
   onBack?: () => void;
-  emergencyNumber: string;
+  servicePhoneNumber: string;
 }
 
 const serviceConfig = {
@@ -97,7 +97,7 @@ function ResponderRoute({
   );
 }
 
-export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, onOpenChat, onBack, emergencyNumber }: LiveTrackingScreenProps) {
+export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, onOpenChat, onBack, servicePhoneNumber }: LiveTrackingScreenProps) {
   const [report, setReport] = useState<StoredEmergencyReport | null>(null);
   const [routeSummaries, setRouteSummaries] = useState<Partial<Record<ServiceType, RouteSummary>>>({});
   const services = [...new Set(serviceTypes)];
@@ -138,16 +138,16 @@ export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, onOpe
     : null;
 
   return (
-    <div className="flex h-full flex-col bg-gray-900 pb-32 text-white">
-      <header className="flex items-center gap-3 border-b border-gray-800 bg-gray-950 px-4 py-3">
+    <div className="flex h-full flex-col bg-[#030814] pb-24 text-white">
+      <header className="flex h-[111px] items-end gap-3 border-b border-slate-800 bg-[#030814] px-4 pb-4">
         {onBack && (
-          <button onClick={onBack} className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-700 bg-gray-800 hover:bg-gray-700" aria-label="Back">
+          <button onClick={onBack} className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800" aria-label="Back">
             <ArrowLeft className="h-5 w-5" />
           </button>
         )}
         <div>
           <h1 className="font-bold">Emergency Response</h1>
-          <p className="text-xs text-gray-400">
+          <p className="text-xs text-slate-400">
             {trackingActive ? 'Live responder locations' : 'Waiting for emergency service acceptance'}
           </p>
         </div>
@@ -185,12 +185,12 @@ export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, onOpe
         )}
       </div>
 
-      <main className="flex-1 overflow-y-auto bg-gradient-to-b from-black to-gray-900">
-        <section className="border-b border-gray-800 p-5">
+      <main className="flex-1 overflow-y-auto bg-[#030814]">
+        <section className="border-b border-slate-800 p-5">
           <h2 className="mb-3 font-bold">Live Status</h2>
           <div className="grid grid-cols-4 gap-2">
             {statusSteps.map((step, index) => (
-              <div key={step.label} className={`rounded-xl p-3 text-center text-xs ${step.active ? 'bg-green-500/20 text-green-300' : 'bg-gray-800 text-gray-500'}`}>
+              <div key={step.label} className={`rounded-lg p-3 text-center text-xs ${step.active ? 'bg-green-500/20 text-green-300' : 'bg-slate-900 text-slate-500'}`}>
                 {step.active && index > 0 && <CheckCircle2 className="mx-auto mb-1 h-4 w-4" />}
                 {step.label}
               </div>
@@ -201,7 +201,7 @@ export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, onOpe
         <section className="space-y-3 p-5">
           <h2 className="font-bold">{trackingActive ? 'Dispatched Responders' : 'Awaiting Response'}</h2>
           {!trackingActive && (
-            <div className="rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-4 text-sm text-yellow-200">
+            <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-4 text-sm text-yellow-200">
               Live tracking will begin automatically after an emergency service accepts and dispatches a unit.
             </div>
           )}
@@ -209,11 +209,11 @@ export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, onOpe
             const config = serviceConfig[service];
             const Icon = config.icon;
             return (
-              <div key={service} className="flex items-center gap-4 rounded-2xl border border-gray-700 bg-gray-800/70 p-4">
+              <div key={service} className="flex items-center gap-4 rounded-lg border border-slate-800 bg-slate-900/80 p-4">
                 <Icon className={`h-7 w-7 ${config.color}`} />
                 <div>
                   <p className="font-bold">{config.name}</p>
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs text-slate-400">
                     Unit {report?.assignedUnits?.[service]?.unit ?? config.unit} is {getServiceStatus(report!, service) === 'arrived' ? 'on scene' : 'responding'}
                   </p>
                   {routeSummaries[service] && (
@@ -229,11 +229,11 @@ export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, onOpe
         </section>
       </main>
 
-      <footer className="grid grid-cols-2 gap-3 border-t border-gray-800 p-4">
-        <button onClick={() => { toast.success(`Calling emergency response at ${emergencyNumber}`); window.location.href = `tel:${emergencyNumber}`; }} className="flex items-center justify-center gap-2 rounded-xl bg-gray-800 py-4 hover:bg-gray-700">
+      <footer className="grid grid-cols-2 gap-3 border-t border-slate-800 bg-[#030814] p-4">
+        <button onClick={() => { toast.success(`Calling assigned responder at ${servicePhoneNumber}`); window.location.href = `tel:${servicePhoneNumber}`; }} className="flex items-center justify-center gap-2 rounded-lg bg-slate-900 py-4 hover:bg-slate-800">
           <Phone className="h-5 w-5" /> Call
         </button>
-        <button onClick={onOpenChat} className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 py-4 hover:bg-blue-700">
+        <button onClick={onOpenChat} className="flex items-center justify-center gap-2 rounded-lg bg-[#2f80ff] py-4 hover:bg-blue-600">
           <MessageSquare className="h-5 w-5" /> Chat
         </button>
       </footer>

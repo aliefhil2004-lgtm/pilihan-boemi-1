@@ -52,7 +52,7 @@ export function analyzeSeverity(input: PhotoAnalysisInput): SeverityAnalysisResu
 
   // Police Keywords
   const policeCritical = ['shooting', 'armed', 'assault', 'robbery', 'violence', 'weapon', 'hostage'];
-  const policeMedium = ['theft', 'accident', 'fight', 'dispute', 'vandalism'];
+  const policeMedium = ['theft', 'accident', 'fight', 'dispute', 'vandalism', 'drug', 'drugs', 'narkoba', 'narcotics', 'trafficking', 'dealer'];
 
   // Analyze for critical medical conditions
   if (medicalCritical.some(keyword => descLower.includes(keyword))) {
@@ -94,10 +94,20 @@ export function analyzeSeverity(input: PhotoAnalysisInput): SeverityAnalysisResu
     recommendedService = 'police';
   }
 
+  if (/(drug dealing|selling drugs|drug dealer|narkoba|narkotika|obat terlarang|sabu|ganja|trafficking)/i.test(descLower)) {
+    severityScore = Math.max(severityScore, 7);
+    indicators.push('Drug-related criminal activity detected');
+    recommendedService = 'police';
+  }
+
   // Low severity conditions
   if (medicalLow.some(keyword => descLower.includes(keyword))) {
     severityScore = Math.min(severityScore, 3);
     indicators.push('Minor medical issue');
+  }
+
+  if (recommendedService === 'police' && severityScore < 5) {
+    severityScore = 5;
   }
 
   // Photo analysis (placeholder for future AI implementation)

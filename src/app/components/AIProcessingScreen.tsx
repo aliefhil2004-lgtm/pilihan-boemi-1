@@ -4,19 +4,21 @@ import { Image as ImageIcon, FileText, MapPin, ScanSearch, Radio } from 'lucide-
 interface AIProcessingScreenProps {
   photo: string | null;
   description: string;
+  isReady: boolean;
   onComplete: () => void;
 }
 
-export function AIProcessingScreen({ photo, description, onComplete }: AIProcessingScreenProps) {
+export function AIProcessingScreen({ photo, description, isReady, onComplete }: AIProcessingScreenProps) {
   const [progress, setProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState(0);
+  const [isAnimationComplete, setIsAnimationComplete] = useState(false);
 
   const steps = [
-    { icon: ImageIcon, label: 'Analyzing emergency photo', duration: 800 },
-    { icon: FileText, label: 'Processing incident description', duration: 700 },
-    { icon: ScanSearch, label: 'Calculating severity scale (1-10)', duration: 900 },
-    { icon: MapPin, label: 'Determining priority level', duration: 600 },
-    { icon: Radio, label: 'Dispatching nearest units', duration: 500 }
+    { icon: ImageIcon, label: 'Analyzing emergency photo', duration: 260 },
+    { icon: FileText, label: 'Processing incident description', duration: 220 },
+    { icon: ScanSearch, label: 'Calculating severity scale (1-10)', duration: 260 },
+    { icon: MapPin, label: 'Determining priority level', duration: 200 },
+    { icon: Radio, label: 'Dispatching nearest units', duration: 180 }
   ];
 
   useEffect(() => {
@@ -44,8 +46,8 @@ export function AIProcessingScreen({ photo, description, onComplete }: AIProcess
 
     // Complete after all steps
     const completeTimeout = setTimeout(() => {
-      onComplete();
-    }, totalDelay + 500);
+      setIsAnimationComplete(true);
+    }, totalDelay + 150);
 
     return () => {
       clearInterval(progressInterval);
@@ -54,59 +56,40 @@ export function AIProcessingScreen({ photo, description, onComplete }: AIProcess
     };
   }, []);
 
+  useEffect(() => {
+    if (!isReady || !isAnimationComplete) return;
+    onComplete();
+  }, [isReady, isAnimationComplete, onComplete]);
+
   return (
-    <div className="flex flex-col h-full bg-gradient-to-b from-gray-900 via-black to-gray-900 text-white items-center justify-center p-6 pb-20">
+    <div className="relative flex h-full flex-col items-center justify-center bg-white px-6 pb-20 text-[#0b3850]">
       {/* Animated assessment core */}
-      <div className="relative mb-12">
-        {/* Outer rotating rings */}
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="w-64 h-64 border-2 border-blue-500/20 rounded-full animate-spin" style={{ animationDuration: '8s' }}></div>
-        </div>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="w-56 h-56 border-2 border-purple-500/20 rounded-full animate-spin" style={{ animationDuration: '6s', animationDirection: 'reverse' }}></div>
-        </div>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="w-48 h-48 border-2 border-pink-500/20 rounded-full animate-spin" style={{ animationDuration: '4s' }}></div>
-        </div>
-
-        {/* Central assessment icon */}
-        <div className="relative w-64 h-64 flex items-center justify-center">
-          <div className="bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 p-12 rounded-full animate-pulse shadow-2xl shadow-purple-500/50">
-            <ScanSearch className="w-20 h-20" />
-          </div>
-        </div>
-
-        {/* Scanning effect */}
-        <div className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-full">
-          <div className="w-full h-1 bg-gradient-to-r from-transparent via-blue-400 to-transparent animate-pulse"></div>
-        </div>
+      <div className="relative mb-8 flex h-[64px] w-[64px] items-center justify-center">
+        <div className="absolute inset-0 rounded-full border-4 border-[#e5e7eb]" />
+        <div className="absolute inset-0 animate-spin rounded-full border-4 border-transparent border-t-[#0b3850]" />
+        <span className="sr-only">{Math.min(progress, 95)}%</span>
       </div>
 
       {/* Status Text */}
-      <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold mb-3 bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-          Emergency Assessment in Progress
-        </h1>
-        <p className="text-gray-400">
-          Analyzing emergency situation…
+      <div className="mb-8 text-center">
+        <h1 className="mb-6 text-2xl font-extrabold">Sending Alert...</h1>
+        <p className="mx-auto max-w-xs text-lg leading-8 text-[#9aa3b1]">
+          Establishing secure connection to emergency services. Do not close the app.
         </p>
       </div>
 
       {/* Progress Bar */}
-      <div className="w-full max-w-md mb-12">
-        <div className="h-2 bg-gray-800 rounded-full overflow-hidden border border-gray-700">
+      <div className="hidden mb-12 w-full max-w-[230px]">
+        <div className="h-1.5 overflow-hidden rounded-full bg-slate-800">
           <div
-            className="h-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 transition-all duration-300 ease-out"
-            style={{ width: `${progress}%` }}
+            className="h-full bg-cyan-400 transition-all duration-300 ease-out"
+            style={{ width: `${Math.min(progress, 95)}%` }}
           ></div>
-        </div>
-        <div className="text-center mt-2 text-sm text-gray-500">
-          {progress}%
         </div>
       </div>
 
       {/* Processing Steps */}
-      <div className="w-full max-w-md space-y-3">
+      <div className="hidden w-full max-w-md space-y-3">
         {steps.map((step, index) => {
           const StepIcon = step.icon;
           const isActive = index === currentStep;
@@ -159,19 +142,10 @@ export function AIProcessingScreen({ photo, description, onComplete }: AIProcess
       </div>
 
       {/* Particle effects */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        {[...Array(20)].map((_, i) => (
-          <div
-            key={i}
-            className="absolute w-1 h-1 bg-blue-400 rounded-full animate-pulse"
-            style={{
-              left: `${Math.random() * 100}%`,
-              top: `${Math.random() * 100}%`,
-              animationDelay: `${Math.random() * 2}s`,
-              animationDuration: `${2 + Math.random() * 2}s`
-            }}
-          ></div>
-        ))}
+      <div className="absolute bottom-28 left-1/2 -translate-x-1/2">
+        <button className="rounded-lg border border-dashed border-[#d21a25] px-6 py-3 text-xs font-bold tracking-[0.18em] text-[#d21a25]">
+          CANCEL REPORT
+        </button>
       </div>
     </div>
   );
