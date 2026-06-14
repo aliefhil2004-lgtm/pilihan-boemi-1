@@ -124,7 +124,7 @@ export function EmergencyReportScreen({ onSubmit, onBack, defaultLocation, langu
         canvas.width = Math.round(video.videoWidth * scale);
         canvas.height = Math.round(video.videoHeight * scale);
         canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const result = await analyzeEmergencyImage(canvas.toDataURL('image/jpeg', 0.68));
+        const result = await analyzeEmergencyImage(canvas.toDataURL('image/jpeg', 0.68), description);
         setLiveDetection(extractLiveCameraDetection(result));
       } catch {
         setLiveDetection(null);
@@ -211,8 +211,9 @@ export function EmergencyReportScreen({ onSubmit, onBack, defaultLocation, langu
 
   const handleSubmit = () => {
     if (isSubmitting) return;
+    const trimmedDescription = description.trim();
 
-    if (!photo && !description.trim()) {
+    if (!photo && !trimmedDescription) {
       toast.error(tr('report.needPhotoOrDescription'));
       return;
     }
@@ -221,7 +222,7 @@ export function EmergencyReportScreen({ onSubmit, onBack, defaultLocation, langu
     Promise.resolve(
       onSubmit({
         photo,
-        description: description || tr('report.defaultDescription'),
+        description: trimmedDescription || tr('report.defaultDescription'),
         location
       })
     ).catch(() => {

@@ -6,9 +6,10 @@ interface AIProcessingScreenProps {
   description: string;
   isReady: boolean;
   onComplete: () => void;
+  onCancel: () => void;
 }
 
-export function AIProcessingScreen({ photo, description, isReady, onComplete }: AIProcessingScreenProps) {
+export function AIProcessingScreen({ photo, description, isReady, onComplete, onCancel }: AIProcessingScreenProps) {
   const [progress, setProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState(0);
   const [isAnimationComplete, setIsAnimationComplete] = useState(false);
@@ -143,7 +144,10 @@ export function AIProcessingScreen({ photo, description, isReady, onComplete }: 
 
       {/* Particle effects */}
       <div className="absolute bottom-28 left-1/2 -translate-x-1/2">
-        <button className="rounded-lg border border-dashed border-[#d21a25] px-6 py-3 text-xs font-bold tracking-[0.18em] text-[#d21a25]">
+        <button
+          onClick={onCancel}
+          className="rounded-lg border border-dashed border-[#d21a25] px-6 py-3 text-xs font-bold tracking-[0.18em] text-[#d21a25] transition hover:bg-red-50"
+        >
           CANCEL REPORT
         </button>
       </div>

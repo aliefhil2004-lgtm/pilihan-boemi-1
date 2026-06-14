@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Clock, Eye, MapPin, MessageSquare, Phone, Radio, Trash2, X } from 'lucide-react';
-import { getReportServices, type StoredEmergencyReport } from '../types/emergency';
+import { ArrowLeft, CheckCircle2, Clock, Eye, MapPin, MessageSquare, Phone, Radio, Trash2, X } from 'lucide-react';
+import { toast } from 'sonner';
+import { getReportServices, getServiceStatus, type StoredEmergencyReport } from '../types/emergency';
 import { cleanupExpiredReports, deleteReports } from '../services/reportStorage';
 import { PrivacyImage } from './PrivacyImage';
+import { getServiceContactNumber } from '../config/contacts';
+import { getServiceDisplayLabel } from '../utils/serviceLabels';
 
 interface ReportHistoryScreenProps {
   initialReportId?: string | null;
@@ -30,6 +33,7 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
   const [selectedReportId, setSelectedReportId] = useState<string | null>(initialReportId ?? null);
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [serviceFilter, setServiceFilter] = useState<'all' | 'pending' | 'responding'>('all');
 
   useEffect(() => {
     const refresh = () => setReports(cleanupExpiredReports());
@@ -61,6 +65,145 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
     setReports(reports.filter(report => !selectedIds.includes(report.id)));
     cancelSelection();
   };
+
+  const isReportAccepted = (report: StoredEmergencyReport) =>
+    getReportServices(report).some(service => getServiceStatus(report, service) !== 'pending');
+
+  const showWaitingToast = (feature: string) => {
+    toast.info(`${feature} can be accessed after emergency services accept the report.`);
+  };
+
+  if (selectedReport) {
+    const accepted = isReportAccepted(selectedReport);
+    const reportServices = getReportServices(selectedReport);
+    const primaryService = reportServices[0] ?? selectedReport.service ?? 'ambulance';
+    const reportContext = `${selectedReport.emergencyType ?? ''} ${selectedReport.detectedIndicators?.join(' ') ?? ''} ${selectedReport.description}`;
+
+    return (
+      <div className="flex h-full flex-col bg-white pb-[104px] text-[#0b3850]">
+        <div className="grid h-[94px] grid-cols-[40px_1fr] items-end gap-3 bg-white px-5 pb-5 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
+          <button
+            onClick={() => setSelectedReportId(null)}
+            className="flex h-10 w-10 items-center justify-center rounded-lg text-[#0b3850] transition hover:bg-slate-50"
+            aria-label="Back to history"
+          >
+            <ArrowLeft className="h-6 w-6" />
+          </button>
+          <h1 className="text-[20px] font-extrabold leading-8">Report Detail</h1>
+        </div>
+
+        <main className="app-scrollbar flex-1 overflow-y-auto px-5 py-4">
+          <div className="mx-auto max-w-sm space-y-4">
+            <section className="relative overflow-hidden rounded-[10px] bg-[#14751b] px-5 py-4 text-center text-white">
+              <span className="pointer-events-none absolute -right-3 -top-5 flex h-[76px] w-[76px] items-center justify-center rounded-full bg-white/15">
+                <CheckCircle2 className="h-11 w-11 text-white/40" />
+              </span>
+              <div className="relative">
+                <p className="text-[18px] font-bold leading-6">Report Sent</p>
+                <p className="mx-auto mt-1 max-w-[290px] text-[14px] leading-5 text-white/85">
+                  Report received. Stay safe and keep your phone available.
+                </p>
+              </div>
+            </section>
+
+            <article className="rounded-[16px] border border-[#e1e5ea] bg-white p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-[22px] font-extrabold leading-7">Building Fire Report</h2>
+                  <p className="mt-1 text-[13px] font-bold text-[#9aa3b1]">#RPT-001</p>
+                </div>
+                <span className={`rounded-full border px-3 py-1.5 text-[11px] font-bold ${severityStyles[selectedReport.severity]}`}>
+                  {severityLabels[selectedReport.severity]}
+                </span>
+              </div>
+
+              {selectedReport.photo && (
+                <PrivacyImage
+                  src={selectedReport.photo}
+                  alt="Submitted emergency"
+                  allowUnblurred={canViewSensitiveMedia}
+                  wrapperClassName="mt-4"
+                  className="h-[181px] w-full rounded-[11px] object-cover"
+                  privacyRegions={selectedReport.privacyRegions}
+                />
+              )}
+
+              <div className="mt-5 flex flex-wrap gap-2">
+                {reportServices.map(service => (
+                  <span
+                    key={service}
+                    className={`rounded-full px-4 py-1.5 text-[16px] font-medium text-white ${
+                      service === 'fire' ? 'bg-[#ff5a0a]' : service === 'ambulance' ? 'bg-[#6da5c4]' : 'bg-[#2563eb]'
+                    }`}
+                  >
+                    {getServiceDisplayLabel(service, reportContext)}
+                  </span>
+                ))}
+              </div>
+
+              <div className="mt-5 space-y-3 text-[16px] leading-5">
+                <p className="flex items-center gap-3"><MapPin className="h-[18px] w-[18px] shrink-0" /><span>{selectedReport.location}</span></p>
+                <p className="flex items-center gap-3"><Clock className="h-[18px] w-[18px] shrink-0" /><span>05/06/2026, 18:29:53</span></p>
+                <p>Severity scale: <span className="font-extrabold text-[#d21a25]">{selectedReport.injuryScale}/10</span></p>
+              </div>
+
+              <div className="mt-5 rounded-xl bg-[#f7f7f7] p-4 text-[13px] text-[#6f7785]">
+                <p className="mb-2 text-[14px] font-extrabold text-[#0b3850]">Assessment Summary</p>
+                {(selectedReport.detectedIndicators?.length ? selectedReport.detectedIndicators : ['Manual review recommended']).map(item => (
+                  <p key={item} className="mt-2">- {item}</p>
+                ))}
+              </div>
+            </article>
+          </div>
+        </main>
+
+        <footer className="absolute bottom-20 left-0 right-0 z-30 grid grid-cols-[50px_50px_1fr] gap-2 bg-white px-5 pb-3 pt-2">
+          <button
+            onClick={() => {
+              if (!accepted) {
+                showWaitingToast('Chat');
+                return;
+              }
+              onOpenChat(selectedReport.id);
+            }}
+            className="flex h-[50px] items-center justify-center rounded-lg bg-[#0b3850] text-white transition hover:bg-[#123f59]"
+            aria-label="Open chat"
+          >
+            <MessageSquare className="h-[18px] w-[18px]" />
+          </button>
+          <button
+            onClick={() => {
+              if (!accepted) {
+                showWaitingToast('Phone call');
+                return;
+              }
+              toast.success(`Calling assigned responder at ${getServiceContactNumber(primaryService)}`);
+              window.location.href = `tel:${getServiceContactNumber(primaryService)}`;
+            }}
+            className="flex h-[50px] items-center justify-center rounded-lg bg-[#0b3850] text-white transition hover:bg-[#123f59]"
+            aria-label="Call responder"
+          >
+            <Phone className="h-[18px] w-[18px]" />
+          </button>
+          <button
+            onClick={() => {
+              if (!accepted) {
+                showWaitingToast('Live tracking');
+                return;
+              }
+              onTrack(selectedReport);
+            }}
+            className={`flex h-[50px] w-full items-center justify-center gap-2 rounded-lg px-3 text-[14px] font-bold text-white shadow-lg transition ${
+              accepted ? 'bg-[#cc1420] hover:bg-red-700' : 'bg-[#8a94a6] hover:bg-[#7b8496]'
+            }`}
+          >
+            <Radio className="h-[18px] w-[18px] shrink-0" />
+            <span className="truncate">{accepted ? 'Live Track Location' : 'Waiting for Acceptance'}</span>
+          </button>
+        </footer>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col bg-white pb-20 text-[#0b3850]">
@@ -128,10 +271,51 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
                 />
               )}
 
-              <div className="mb-4 flex flex-wrap gap-2">
-                {getReportServices(selectedReport).map(service => (
-                  <span key={service} className={`rounded-full px-4 py-1.5 text-[12px] capitalize leading-5 text-white ${service === 'fire' ? 'bg-[#ff5a0a]' : 'bg-[#6da5c4]'}`}>{service === 'ambulance' ? 'Medic' : service}</span>
+              <div className="mb-4 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {(['all', 'pending', 'responding'] as const).map(filter => (
+                  <button
+                    key={filter}
+                    onClick={() => setServiceFilter(filter)}
+                    className={`shrink-0 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase leading-4 tracking-[0.5px] ${serviceFilter === filter ? 'bg-[#0b3850] text-white' : 'bg-[#eef2f7] text-[#6b7280]'}`}
+                  >
+                    {filter}
+                  </button>
                 ))}
+              </div>
+
+              <div className="mb-4 overflow-hidden rounded-2xl border border-[#e5e7eb] bg-[#f8fafc] p-2.5">
+                <div className="mb-2 flex items-end justify-between px-0.5">
+                  <h3 className="text-[11px] font-semibold uppercase leading-4 tracking-[0.6px] text-[#6b7280]">Emergency Services</h3>
+                  <span className="text-[10px] leading-4 text-[#9aa3b1]">Swipe</span>
+                </div>
+                <div className="flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {getReportServices(selectedReport).map(service => {
+                    const status = selectedReport.serviceStatuses?.[service] ?? selectedReport.status;
+                    if (serviceFilter !== 'all' && status !== serviceFilter) return null;
+                    const label = getServiceDisplayLabel(service, `${selectedReport.emergencyType ?? ''} ${selectedReport.detectedIndicators?.join(' ') ?? ''} ${selectedReport.description}`);
+                    const statusLabel = status === 'pending' ? 'Pending' : status === 'responding' ? 'Responding' : status === 'arrived' ? 'Arrived' : status === 'done' ? 'Done' : 'Resolved';
+                    const active = status === 'responding' || status === 'done';
+                    return (
+                      <div
+                        key={service}
+                        className={`min-w-[124px] snap-start shrink-0 rounded-xl border px-3 py-3 ${active ? 'border-[#0c3249]/15 bg-white' : 'border-[#e5e7eb] bg-white/70'}`}
+                      >
+                        <div className="flex flex-col items-center text-center">
+                          <p className="text-[12px] font-bold leading-4 text-[#0b3850]">{label}</p>
+                          <span className="mt-1 rounded-full bg-[#f3f4f6] px-2 py-0.5 text-[9px] font-semibold uppercase leading-4 tracking-[0.4px] text-[#6b7280]">
+                            {statusLabel}
+                          </span>
+                        </div>
+                        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#e5e7eb]">
+                          <div
+                            className={`h-full rounded-full ${service === 'fire' ? 'bg-[#ff5a0a]' : service === 'ambulance' ? 'bg-[#6da5c4]' : 'bg-[#4f46e5]'}`}
+                            style={{ width: status === 'done' ? '100%' : status === 'arrived' ? '82%' : status === 'responding' ? '60%' : '34%' }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="space-y-2 text-[#0b3850]">
@@ -150,13 +334,20 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
               ) : null}
 
               {selectedReport.assignedUnits && Object.keys(selectedReport.assignedUnits).length > 0 && (
-                <div className="mt-5 rounded-lg border border-blue-500/30 bg-blue-500/10 p-4">
-                  <h3 className="mb-2 font-semibold text-blue-200">Assigned Responders</h3>
-                  {Object.entries(selectedReport.assignedUnits).map(([service, assignment]) => (
-                    <p key={service} className="text-sm text-slate-300">
-                      <span className="capitalize">{service}</span>: <strong>{assignment?.unit}</strong> · {assignment?.etaMinutes} min initial ETA
-                    </p>
-                  ))}
+                <div className="mt-5 rounded-2xl border border-blue-500/30 bg-blue-500/10 p-2.5">
+                  <h3 className="mb-2 px-0.5 text-[11px] font-semibold uppercase leading-4 tracking-[0.6px] text-blue-200">Assigned Responders</h3>
+                  <div className="flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    {Object.entries(selectedReport.assignedUnits).map(([service, assignment]) => (
+                      <div key={service} className="min-w-[138px] snap-start shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-slate-200">
+                        <div className="flex flex-col items-center text-center">
+                          <p className="text-[11px] font-bold uppercase leading-4 tracking-[0.6px] text-white/70">{service}</p>
+                          <span className="mt-1 rounded-full bg-white/10 px-2 py-0.5 text-[9px] font-semibold uppercase leading-4 tracking-[0.4px] text-white/70">ETA</span>
+                        </div>
+                        <p className="mt-2 text-center text-[13px] font-bold leading-5 text-white">{assignment?.unit}</p>
+                        <p className="mt-0.5 text-center text-[11px] leading-4 text-slate-300">{assignment?.etaMinutes} min</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -172,9 +363,17 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
                 </div>
               ) : null}
 
-              <div className="mt-5 grid grid-cols-[50px_50px_1fr] gap-2 pb-1">
+              <div className="mt-6 border-t border-[#e5e7eb] pt-4" />
+
+              <div className="mt-0 grid grid-cols-[50px_50px_1fr] gap-2 pb-1">
                 <button
-                  onClick={() => onOpenChat(selectedReport.id)}
+                  onClick={() => {
+                    if (!isReportAccepted(selectedReport)) {
+                      showWaitingToast('Chat');
+                      return;
+                    }
+                    onOpenChat(selectedReport.id);
+                  }}
                   className="flex h-[50px] items-center justify-center rounded-lg bg-[#0b3850] text-white hover:bg-[#123f59]"
                   aria-label="Open chat"
                 >
@@ -182,6 +381,10 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
                 </button>
                 <button
                   onClick={() => {
+                    if (!isReportAccepted(selectedReport)) {
+                      showWaitingToast('Phone call');
+                      return;
+                    }
                     if (selectedReport.reporterPhone) {
                       window.location.href = `tel:${selectedReport.reporterPhone}`;
                     }
@@ -192,12 +395,19 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
                   <Phone className="h-[18px] w-[18px]" />
                 </button>
                 <button
-                  onClick={() => onTrack(selectedReport)}
-                  disabled={selectedReport.status === 'pending'}
-                  className="flex h-[50px] w-full items-center justify-center gap-2 rounded-lg bg-[#cc1420] px-3 text-[14px] font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                  onClick={() => {
+                    if (!isReportAccepted(selectedReport)) {
+                      showWaitingToast('Live tracking');
+                      return;
+                    }
+                    onTrack(selectedReport);
+                  }}
+                  className={`flex h-[50px] w-full items-center justify-center gap-2 rounded-lg px-3 text-[14px] font-bold text-white ${
+                    isReportAccepted(selectedReport) ? 'bg-[#cc1420] hover:bg-red-700' : 'bg-[#8a94a6] hover:bg-[#7b8496]'
+                  }`}
                 >
                   <Radio className="h-[18px] w-[18px] shrink-0" />
-                  <span className="truncate">{selectedReport.status === 'pending' ? 'Waiting' : 'Live Track Location'}</span>
+                  <span className="truncate">{isReportAccepted(selectedReport) ? 'Live Track Location' : 'Waiting for Acceptance'}</span>
                 </button>
               </div>
             </article>
@@ -246,7 +456,11 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
             </div>
             <div className="mb-4 flex flex-wrap gap-2">
               {getReportServices(report).map(service => (
-                <span key={service} className={`rounded-full px-4 py-1.5 text-[12px] capitalize leading-5 text-white ${service === 'fire' ? 'bg-[#ff5a0a]' : 'bg-[#6da5c4]'}`}>{service === 'ambulance' ? 'Medic' : service}</span>
+                <span key={service} className={`rounded-full px-4 py-1.5 text-[12px] leading-5 text-white ${
+                  service === 'fire' ? 'bg-[#ff5a0a]' : service === 'ambulance' ? 'bg-[#6da5c4]' : 'bg-[#2563eb]'
+                }`}>
+                  {getServiceDisplayLabel(service, `${report.emergencyType ?? ''} ${report.detectedIndicators?.join(' ') ?? ''} ${report.description}`)}
+                </span>
               ))}
             </div>
             <div className="space-y-2 text-[#0b3850]">

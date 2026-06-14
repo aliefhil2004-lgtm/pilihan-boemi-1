@@ -1,4 +1,4 @@
-export async function analyzeEmergencyImage(imageBase64: string) {
+export async function analyzeEmergencyImage(imageBase64: string, reportText = '') {
   const cleanBase64 = imageBase64.includes(',')
     ? imageBase64.split(',')[1]
     : imageBase64;
@@ -16,6 +16,7 @@ export async function analyzeEmergencyImage(imageBase64: string) {
             type: 'base64',
             value: cleanBase64,
           },
+          report_text: reportText,
         },
       }),
     }

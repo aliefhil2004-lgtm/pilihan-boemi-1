@@ -42,8 +42,31 @@ export default async function handler(request: VercelRequest, response: VercelRe
   }
 
   if (!process.env.ROBOFLOW_API_KEY) {
-    response.statusCode = 500;
-    return response.end(JSON.stringify({ error: 'ROBOFLOW_API_KEY is not configured' }));
+    const requestBody = parseBody(request.body);
+    const reportText = typeof requestBody?.inputs?.report_text === 'string'
+      ? requestBody.inputs.report_text.toLowerCase()
+      : '';
+    const disasterType = /tsunami/.test(reportText)
+      ? 'tsunami'
+      : /earthquake|gempa/.test(reportText)
+      ? 'earthquake'
+      : /flood|banjir/.test(reportText)
+      ? 'flood'
+      : /landslide|longsor/.test(reportText)
+      ? 'landslide'
+      : /volcanic|gunung meletus|erupsi/.test(reportText)
+      ? 'volcanic eruption'
+      : 'general emergency';
+    response.statusCode = 200;
+    return response.end(JSON.stringify({
+      outputs: [{
+        incident_type: disasterType,
+        severity_score: 5,
+        description: 'Roboflow is not configured in this environment; returning a neutral fallback response.',
+        confidence: 0.25,
+        predictions: []
+      }]
+    }));
   }
 
   try {

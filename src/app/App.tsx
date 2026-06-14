@@ -13,6 +13,7 @@ import { ReportHistoryScreen } from './components/ReportHistoryScreen';
 import { ChatScreen } from './components/ChatScreen';
 import { Navigation } from './components/Navigation';
 import { ProfileScreen } from './components/ProfileScreen';
+import { CallScreen } from './components/CallScreen';
 import { IPhoneStatusBar } from './components/IPhoneStatusBar';
 import { SplashScreen } from './components/SplashScreen';
 import { LocationPicker } from './components/LocationPicker';
@@ -21,7 +22,7 @@ import { LanguageToggle } from './components/LanguageToggle';
 import { ArrowLeft, Globe2 } from 'lucide-react';
 import { analyzeEmergency } from './services/ai';
 import { createServiceStatuses, getReportServices, type ServiceType, type StoredEmergencyReport } from './types/emergency';
-import { cleanupExpiredReports, resetPreviousHistoryOnce, saveReport } from './services/reportStorage';
+import { cleanupExpiredReports, deleteReports, resetPreviousHistoryOnce, saveReport } from './services/reportStorage';
 import { startReportSync } from './services/firebaseSync';
 import {
   getFriendlyAuthError,
@@ -38,7 +39,7 @@ import { getServiceContactNumber } from './config/contacts';
 import { t as translate, type Language } from './i18n';
 import type { PrivacyRegion } from './types/emergency';
 
-type Screen = 'login' | 'register' | 'home' | 'report' | 'processing' | 'result' | 'tracking' | 'service-dashboard' | 'fire-map' | 'history' | 'chat' | 'profile';
+type Screen = 'login' | 'register' | 'home' | 'report' | 'processing' | 'result' | 'tracking' | 'service-dashboard' | 'fire-map' | 'history' | 'chat' | 'profile' | 'call';
 type UserRole = 'civilian' | 'service' | null;
 
 function getPortalRole(): Exclude<UserRole, null> {
@@ -60,7 +61,7 @@ interface RegisterData {
   password: string;
   name: string;
   phone: string;
-  identityType: 'national-id' | 'passport' | 'drivers-license';
+  identityType: 'national-id' | 'passport';
   identityNumber: string;
   serviceType?: 'ambulance' | 'fire' | 'police';
   credentialPhoto?: string;
@@ -86,6 +87,27 @@ interface UserLocation {
   coords: { lat: number; lng: number };
 }
 
+function detectCurrentLocation(countryName: string): Promise<UserLocation> {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('Geolocation not supported'));
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        const { reverseGeocode } = await import('./services/geocoding');
+        const address = await reverseGeocode(lat, lng, `Current location in ${countryName}`);
+        resolve({ address, coords: { lat, lng } });
+      },
+      reject,
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  });
+}
+
 export default function App() {
   const portalRole = getPortalRole();
   const [userRole, setUserRole] = useState<UserRole>(null);
@@ -104,6 +126,13 @@ export default function App() {
   );
   const [chatReportId, setChatReportId] = useState<string | null>(null);
   const [chatReturnScreen, setChatReturnScreen] = useState<Screen>('history');
+  const [callReturnScreen, setCallReturnScreen] = useState<Screen>('home');
+  const [callData, setCallData] = useState<{
+    contactName: string;
+    contactRole: string;
+    serviceType?: ServiceType;
+    callerRole: 'civilian' | 'service';
+  } | null>(null);
   const [historyReportId, setHistoryReportId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
@@ -127,8 +156,13 @@ export default function App() {
     location: ''
   });
   const primaryEmergencyService = emergencyData.services?.[0] ?? selectedService;
-  const canViewSensitiveMedia = userRole === 'service' && selectedService === 'police';
+  const canViewSensitiveMedia = userRole === 'service';
   const tr = (key: Parameters<typeof translate>[1]) => translate(language, key);
+
+  function mapResponsePlanToServices(responsePlan?: Array<ServiceType | 'disaster-response'>, fallback: ServiceType[] = []): ServiceType[] {
+    const mapped = (responsePlan ?? []).flatMap(role => role === 'disaster-response' ? [] : [role]);
+    return [...new Set((mapped.length ? mapped : fallback).filter((service): service is ServiceType => service === 'ambulance' || service === 'fire' || service === 'police'))];
+  }
 
   useEffect(() => {
     resetPreviousHistoryOnce();
@@ -242,6 +276,17 @@ export default function App() {
     setLanguage(nextLanguage);
   };
 
+  const handleRefreshLocation = async () => {
+    try {
+      const nextLocation = await detectCurrentLocation(country.name);
+      setUserLocation(nextLocation);
+      setEmergencyData(prev => ({ ...prev, location: nextLocation.address }));
+      toast.success('Current location refreshed');
+    } catch {
+      toast.error('Unable to refresh current location');
+    }
+  };
+
   const handleBack = () => {
     if (currentScreen === 'report') {
       setCurrentScreen('home');
@@ -262,6 +307,11 @@ export default function App() {
 
   const handleEmergencyStart = () => {
     setCurrentScreen('report');
+  };
+
+  const handleCurrentLocationRefresh = async () => {
+    await handleRefreshLocation();
+    setShowLocationPicker(false);
   };
 
   const handleServiceSelect = (service: ServiceType) => {
@@ -308,7 +358,15 @@ export default function App() {
         'services' in aiResult && Array.isArray(aiResult.services) && aiResult.services.length
           ? aiResult.services
           : [aiResult.service];
+      const responsePlan = 'responsePlan' in aiResult && Array.isArray(aiResult.responsePlan)
+        ? aiResult.responsePlan
+        : [aiResult.service];
+      const priorityRole = 'priorityRole' in aiResult && aiResult.priorityRole
+        ? aiResult.priorityRole
+        : aiResult.service;
+      const orderedServices = mapResponsePlanToServices(responsePlan, requiredServices);
       const reportId = Date.now().toString();
+      if (pendingReportRef.current !== data) return;
       setSelectedService(aiResult.service);
 
       const reportData: EmergencyData = {
@@ -326,7 +384,7 @@ export default function App() {
         annotatedImage: aiResult.annotatedImage,
         privacyRegions: aiResult.privacyRegions,
         id: reportId,
-        services: requiredServices
+        services: orderedServices
       };
 
       setEmergencyData(reportData);
@@ -338,8 +396,10 @@ export default function App() {
         location: data.location,
         coords: userLocation.coords,
         service: aiResult.service,
-        services: requiredServices,
-        serviceStatuses: createServiceStatuses(requiredServices),
+        services: orderedServices,
+        responsePlan,
+        priorityRole,
+        serviceStatuses: createServiceStatuses(orderedServices),
         severity:
           aiResult.severity === 'Critical'
             ? 'critical'
@@ -382,10 +442,45 @@ export default function App() {
     setCurrentScreen('home');
   };
 
+  const handleCancelPendingSubmission = () => {
+    pendingReportRef.current = null;
+    setIsSubmittingReport(false);
+    setIsProcessingReady(false);
+    setEmergencyData({ photo: null, description: '', location: '' });
+    setHistoryReportId(null);
+    setCurrentScreen('home');
+    toast.info(language === 'id' ? 'Laporan dibatalkan' : 'Report canceled');
+  };
+
+  const handleCancelSubmittedReport = () => {
+    if (emergencyData.id) deleteReports([emergencyData.id]);
+    setEmergencyData({ photo: null, description: '', location: '' });
+    setHistoryReportId(null);
+    setCurrentScreen('home');
+    toast.info(language === 'id' ? 'Laporan dibatalkan' : 'Report canceled');
+    window.setTimeout(() => {
+      if (emergencyData.id) deleteReports([emergencyData.id]);
+    }, 800);
+  };
+
 const handleOpenChat = (reportId: string, returnScreen: Screen = currentScreen) => {
   setChatReportId(reportId);
   setChatReturnScreen(returnScreen);
   setCurrentScreen('chat');
+};
+
+const handleOpenCall = (
+  data: {
+    contactName: string;
+    contactRole: string;
+    serviceType?: ServiceType;
+    callerRole: 'civilian' | 'service';
+  },
+  returnScreen: Screen = currentScreen
+) => {
+  setCallData(data);
+  setCallReturnScreen(returnScreen);
+  setCurrentScreen('call');
 };
 
 const handleTrackReport = (report: StoredEmergencyReport) => {
@@ -424,15 +519,17 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
     currentScreen !== 'history' &&
     currentScreen !== 'tracking' &&
     currentScreen !== 'processing' &&
+    currentScreen !== 'result' &&
     currentScreen !== 'service-dashboard' &&
     currentScreen !== 'fire-map' &&
     currentScreen !== 'chat' &&
+    currentScreen !== 'call' &&
     currentScreen !== 'profile' &&
     currentScreen !== 'login' &&
     currentScreen !== 'register';
   const showNavigation =
     userRole === 'civilian'
-      ? currentScreen !== 'service-dashboard' && currentScreen !== 'processing'
+      ? currentScreen !== 'service-dashboard' && currentScreen !== 'processing' && currentScreen !== 'fire-map' && currentScreen !== 'call'
       : userRole === 'service' && (currentScreen === 'home' || currentScreen === 'profile');
   
   // Show login or register screen if not logged in
@@ -505,7 +602,7 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
           onServiceSelect={handleServiceSelect}
           onOpenDangerMap={() => setCurrentScreen('fire-map')}
           currentLocation={userLocation.address}
-          onChangeLocation={() => setShowLocationPicker(true)}
+          onChangeLocation={handleCurrentLocationRefresh}
           country={country}
           userRole={userRole}
           serviceType={userRole === 'service' ? selectedService : undefined}
@@ -528,6 +625,7 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
           description={emergencyData.description}
           isReady={isProcessingReady}
           onComplete={handleProcessingComplete}
+          onCancel={handleCancelPendingSubmission}
         />
       )}
 
@@ -537,17 +635,29 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
           priority={emergencyData.priority || 'Medium'}
           recommendedService={selectedService}
           recommendedServices={emergencyData.services ?? [selectedService]}
+          reportId={emergencyData.id}
           injuryScale={emergencyData.injuryScale || 5}
           location={emergencyData.location}
           detectedIndicators={emergencyData.detectedIndicators}
           annotatedImage={emergencyData.annotatedImage}
+          privacyRegions={emergencyData.privacyRegions}
           isFalseReport={Boolean((emergencyData as { isFalseReport?: boolean }).isFalseReport)}
           falseReportReason={(emergencyData as { falseReportReason?: string }).falseReportReason}
           servicePhoneNumber={getServiceContactNumber(primaryEmergencyService)}
           canViewSensitiveMedia={canViewSensitiveMedia}
+          onCancelReport={handleCancelSubmittedReport}
+          onOpenChat={() => {
+            if (emergencyData.id) handleOpenChat(emergencyData.id, 'result');
+          }}
+          onCallResponder={() => handleOpenCall({
+            contactName: primaryEmergencyService === 'ambulance' ? 'Medic Command' : primaryEmergencyService === 'fire' ? 'Fire Command' : 'Police Command',
+            contactRole: primaryEmergencyService === 'ambulance' ? 'Medic Responder' : primaryEmergencyService === 'fire' ? 'Fire Responder' : 'Police Responder',
+            serviceType: primaryEmergencyService,
+            callerRole: 'civilian'
+          }, 'result')}
           onViewDetails={() => {
             setHistoryReportId(emergencyData.id ?? null);
-            setCurrentScreen('history');
+            setCurrentScreen('tracking');
           }}
           onFalseReportDone={handleFalseReportDone}
           language={language}
@@ -572,6 +682,12 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
           canViewSensitiveMedia={canViewSensitiveMedia}
           onBack={() => setCurrentScreen('home')}
           onOpenChat={reportId => handleOpenChat(reportId, 'service-dashboard')}
+          onCallCitizen={() => handleOpenCall({
+            contactName: 'Mytha Floyen',
+            contactRole: 'Civilian',
+            serviceType: selectedService,
+            callerRole: 'service'
+          }, 'service-dashboard')}
         />
       )}
 
@@ -599,12 +715,20 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
           currentLocation={userLocation.address}
           language={language}
           onLogout={handleLogout}
+          onLanguageChange={handleLanguageChange}
           userRole={userRole}
           serviceType={userRole === 'service' ? selectedService : undefined}
           userName={userProfile?.name}
           userEmail={userProfile?.email}
           userPhone={userProfile?.phone}
           userIdentityNumber={userProfile?.identityNumber}
+        />
+      )}
+
+      {currentScreen === 'call' && callData && (
+        <CallScreen
+          {...callData}
+          onBack={() => setCurrentScreen(callReturnScreen)}
         />
       )}
 
@@ -631,6 +755,7 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
         <LocationPicker
           currentLocation={userLocation.address}
           onLocationChange={handleLocationChange}
+          onRefreshLocation={handleRefreshLocation}
           onClose={() => setShowLocationPicker(false)}
           country={country}
         />

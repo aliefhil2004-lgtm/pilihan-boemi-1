@@ -10,7 +10,7 @@ interface HomeScreenProps {
   onServiceSelect: (service: 'ambulance' | 'fire' | 'police') => void;
   onOpenDangerMap: () => void;
   currentLocation: string;
-  onChangeLocation: () => void;
+  onChangeLocation: () => void | Promise<void>;
   country: AseanCountry;
   userRole: 'civilian' | 'service';
   serviceType?: 'ambulance' | 'fire' | 'police';
@@ -75,7 +75,7 @@ export function HomeScreen({ onEmergencyStart, onServiceSelect, onOpenDangerMap,
         )}
       </div>
 
-      <div className="relative mx-[15px] mt-0 flex h-[57px] shrink-0 items-start justify-between overflow-hidden rounded-[10px] bg-[#0c2f45] px-4 py-[10px] text-white">
+        <div className="relative mx-[15px] mt-0 flex h-[57px] shrink-0 items-start justify-between overflow-hidden rounded-[10px] bg-[#0c2f45] px-4 py-[10px] text-white">
         <div className="pointer-events-none absolute -left-24 -top-16 h-44 w-44 rounded-full bg-white/10" />
         <div className="pointer-events-none absolute -right-20 -top-10 h-36 w-36 rounded-full bg-white/10" />
         <div className="relative flex w-full items-center gap-4 pr-1">
@@ -86,7 +86,7 @@ export function HomeScreen({ onEmergencyStart, onServiceSelect, onOpenDangerMap,
           <button
             onClick={onChangeLocation}
             className="ml-auto flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg border border-white bg-white/5 transition hover:bg-white/10"
-            aria-label="Change location"
+            aria-label="Refresh current location"
           >
             <RefreshCw className="h-4 w-4 text-white" />
           </button>
@@ -110,7 +110,12 @@ export function HomeScreen({ onEmergencyStart, onServiceSelect, onOpenDangerMap,
                 <span className="mt-2 text-[14px] font-medium leading-[16.5px] text-white/80">{tr('home.tapToStart')}</span>
               </button>
             </div>
-            <p className="mb-[58px] mt-[19px] text-[11px] leading-4 text-[#6a7282]">Emergency Hotline: <span className="font-bold text-[#ff6467]">{country.emergency.ambulance}</span></p>
+            <a
+              href={`tel:${country.emergency.ambulance}`}
+              className="mb-[58px] mt-[19px] block text-[11px] leading-4 text-[#6a7282] transition hover:text-[#0b3850]"
+            >
+              Emergency Hotline: <span className="font-bold text-[#ff6467]">{country.emergency.ambulance}</span>
+            </a>
             <button
               onClick={onOpenDangerMap}
               className="relative mx-4 flex h-[68px] w-[358px] items-center justify-between overflow-hidden rounded-[10px] bg-[#0c324a] p-[10px] text-left text-white transition hover:bg-[#123f59]"
@@ -158,25 +163,25 @@ export function HomeScreen({ onEmergencyStart, onServiceSelect, onOpenDangerMap,
                 );
               })}
             </div>
-            <div className="mt-5 flex h-[88px] items-center gap-4 rounded-lg bg-[#c11720] p-4 text-white">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-[#c11720]">
+            <div className="mt-5 flex min-h-[104px] items-start gap-4 rounded-lg bg-[#c11720] px-4 py-5 text-white">
+              <div className="mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-[#c11720]">
                 <AlertTriangle className="h-[22px] w-[22px] fill-current" />
               </div>
-              <div className="flex items-start gap-3">
-                <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1">
+                <div className="min-w-0">
                   <p className="text-[12px] font-bold uppercase leading-4 tracking-[0.6px]">{tr('home.highestPriority')}</p>
                   {highestPriorityReport ? (
                     <>
-                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <div className="mt-2 flex flex-wrap items-center gap-3">
                         <p className="text-[14px] font-bold leading-5 text-white/90">{priorityLabel}</p>
                         <span className="rounded-md bg-white/15 px-2 py-1 text-[10px] font-bold text-white">
                           {highestPriorityReport.injuryScale}/10
                         </span>
                       </div>
-                      <p className="mt-1 truncate text-[14px] leading-5 text-white/80">
+                      <p className="mt-2 truncate text-[14px] leading-5 text-white/85">
                         {highestPriorityReport.emergencyType ?? highestPriorityReport.description ?? 'Emergency report'}
                       </p>
-                      <p className="mt-1 truncate text-[12px] text-white/70">{highestPriorityReport.location}</p>
+                      <p className="mt-2 truncate text-[12px] leading-4 text-white/75">{highestPriorityReport.location}</p>
                     </>
                   ) : (
                     <p className="mt-1 text-[14px] leading-5 text-white/80">{tr('home.noActiveReports')}</p>

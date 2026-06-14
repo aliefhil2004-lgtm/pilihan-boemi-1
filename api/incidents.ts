@@ -2,7 +2,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminFirestore } from '../server/firebaseAdmin';
 
 type ServiceType = 'ambulance' | 'fire' | 'police';
-type ReportStatus = 'pending' | 'responding' | 'arrived' | 'resolved';
+type ReportStatus = 'pending' | 'responding' | 'arrived' | 'resolved' | 'done';
 
 interface VercelRequest {
   method?: string;
@@ -17,12 +17,13 @@ interface VercelResponse {
 }
 
 const services: ServiceType[] = ['ambulance', 'fire', 'police'];
-const statuses: ReportStatus[] = ['pending', 'responding', 'arrived', 'resolved'];
+const statuses: ReportStatus[] = ['pending', 'responding', 'arrived', 'resolved', 'done'];
 const allowedTransitions: Record<ReportStatus, ReportStatus[]> = {
   pending: ['responding'],
-  responding: ['arrived'],
-  arrived: ['resolved'],
-  resolved: []
+  responding: ['arrived', 'done'],
+  arrived: ['resolved', 'done'],
+  resolved: ['done'],
+  done: []
 };
 
 function parseBody(value: unknown): Record<string, unknown> {
@@ -105,6 +106,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
         const label =
           status === 'responding' ? `${assignment?.unit ?? service} dispatched` :
           status === 'arrived' ? `${assignment?.unit ?? service} arrived on scene` :
+          status === 'done' ? `${service} incident closed` :
           `${service} response resolved`;
         const audit = createAudit(
           service,
@@ -114,9 +116,10 @@ export default async function handler(request: VercelRequest, response: VercelRe
         const serviceStatuses = { ...(report.serviceStatuses ?? {}), [service]: status };
         const values = Object.values(serviceStatuses) as ReportStatus[];
         const overallStatus =
+          values.every(value => value === 'done') ? 'done' :
           values.every(value => value === 'resolved') ? 'resolved' :
-          values.some(value => value === 'arrived') && values.every(value => ['arrived', 'resolved'].includes(value)) ? 'arrived' :
-          values.some(value => ['responding', 'arrived', 'resolved'].includes(value)) ? 'responding' :
+          values.some(value => value === 'arrived') && values.every(value => ['arrived', 'resolved', 'done'].includes(value)) ? 'arrived' :
+          values.some(value => ['responding', 'arrived', 'resolved', 'done'].includes(value)) ? 'responding' :
           'pending';
         const update = {
           serviceStatuses,

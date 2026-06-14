@@ -18,7 +18,11 @@ const candidateLabels = [
   'lost property non emergency',
   'threatening incident',
   'dangerous animal threat',
-  'drug related crime'
+  'drug related crime',
+  'gas leak hazmat emergency',
+  'heart attack or stroke emergency',
+  'respiratory distress emergency',
+  'poisoning or chemical exposure emergency'
 ];
 
 function parseBody(value: unknown): Record<string, unknown> {

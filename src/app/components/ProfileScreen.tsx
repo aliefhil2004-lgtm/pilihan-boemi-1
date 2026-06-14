@@ -1,6 +1,7 @@
 import { Bell, BriefcaseMedical, ChevronRight, CircleHelp, FileText, Globe2, IdCard, LockKeyhole, LogOut, Mail, MapPin, Pencil, Phone, ShieldCheck, User } from 'lucide-react';
 import { t, type Language } from '../i18n';
 import type { AseanCountry } from '../config/asean';
+import { serviceUnitConfig } from '../config/serviceUnits';
 
 interface ProfileScreenProps {
   country: AseanCountry;
@@ -13,25 +14,26 @@ interface ProfileScreenProps {
   userEmail?: string;
   userPhone?: string;
   userIdentityNumber?: string;
+  onLanguageChange: (language: Language) => void;
 }
 
 const serviceProfiles = {
   ambulance: {
     name: 'Jordan Lee',
-    unit: 'Unit 14',
-    role: 'Senior Paramedic',
+    unit: serviceUnitConfig.ambulance.unit,
+    role: serviceUnitConfig.ambulance.role,
     avatar: 'https://api.builder.io/api/v1/image/assets/TEMP/1d24c44bee18a946af40fb10c60ad5961b3a8097?width=192'
   },
   fire: {
     name: 'Alex Morgan',
-    unit: 'Engine 15',
-    role: 'Fire Fighter',
+    unit: serviceUnitConfig.fire.unit,
+    role: serviceUnitConfig.fire.role,
     avatar: 'https://api.builder.io/api/v1/image/assets/TEMP/1d24c44bee18a946af40fb10c60ad5961b3a8097?width=192'
   },
   police: {
     name: 'Raka Putra',
-    unit: 'Patrol 89',
-    role: 'Police Officer',
+    unit: serviceUnitConfig.police.unit,
+    role: serviceUnitConfig.police.role,
     avatar: 'https://api.builder.io/api/v1/image/assets/TEMP/1d24c44bee18a946af40fb10c60ad5961b3a8097?width=192'
   }
 };
@@ -39,6 +41,7 @@ const serviceProfiles = {
 export function ProfileScreen({
   language,
   onLogout,
+  onLanguageChange,
   userRole = 'civilian',
   serviceType = 'ambulance',
   userName,
@@ -104,9 +107,9 @@ export function ProfileScreen({
                 <span className="flex-1"><span className="block text-[16px] font-bold leading-6">Security</span><span className="text-[14px] leading-5 text-[#42474d]">Password, PIN, and biometric settings</span></span>
                 <ChevronRight className="h-4 w-4 text-[#9aa3b1]" />
               </button>
-              <button className="flex w-full items-center gap-4 border-b border-[#0c324a]/10 p-6 text-left">
+              <button onClick={() => onLanguageChange(language === 'en' ? 'id' : 'en')} className="flex w-full items-center gap-4 border-b border-[#0c324a]/10 p-6 text-left">
                 <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-white"><Globe2 className="h-5 w-5 text-[#0c3249]" /></span>
-                <span className="flex-1"><span className="block text-[16px] font-bold leading-6">Language</span><span className="text-[14px] leading-5 text-[#42474d]">English</span></span>
+                <span className="flex-1"><span className="block text-[16px] font-bold leading-6">Language</span><span className="text-[14px] leading-5 text-[#42474d]">{language === 'en' ? 'English' : 'Bahasa Indonesia'}</span></span>
                 <ChevronRight className="h-4 w-4 text-[#9aa3b1]" />
               </button>
               <button className="flex w-full items-center gap-4 border-b border-[#0c324a]/10 p-6 text-left">
@@ -194,9 +197,9 @@ export function ProfileScreen({
               <span className="flex-1"><span className="block text-[16px] font-bold leading-6">Security</span><span className="text-[14px] leading-5 text-[#3f454d]">Password, PIN, and biometric settings</span></span>
               <ChevronRight className="h-4 w-4 text-[#9aa3b1]" />
             </button>
-            <button className="flex w-full items-center gap-4 border-b border-[#d8e6ee] p-6 text-left">
+            <button onClick={() => onLanguageChange(language === 'en' ? 'id' : 'en')} className="flex w-full items-center gap-4 border-b border-[#d8e6ee] p-6 text-left">
               <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-white"><Globe2 className="h-5 w-5 text-[#0b3850]" /></span>
-              <span className="flex-1"><span className="block text-[16px] font-bold leading-6">Language</span><span className="text-[14px] leading-5 text-[#3f454d]">English</span></span>
+              <span className="flex-1"><span className="block text-[16px] font-bold leading-6">Language</span><span className="text-[14px] leading-5 text-[#3f454d]">{language === 'en' ? 'English' : 'Bahasa Indonesia'}</span></span>
               <ChevronRight className="h-4 w-4 text-[#9aa3b1]" />
             </button>
             <button className="flex w-full items-center gap-4 border-b border-[#d8e6ee] p-6 text-left">

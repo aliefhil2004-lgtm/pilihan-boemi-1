@@ -58,10 +58,43 @@ function getServiceTypeFromRole(role: unknown): ServiceType | null {
 }
 
 function requireAuth() {
-  if (!firebaseEnabled || !firebaseAuth) {
-    throw new Error('Firebase is not configured. Check your VITE_FIREBASE_* environment variables.');
-  }
+  if (!firebaseEnabled || !firebaseAuth) return null;
   return firebaseAuth;
+}
+
+function getLocalDemoServiceLogin(email: string, password: string): ServiceLoginResult | null {
+  const isLocalPreview =
+    typeof window !== 'undefined' &&
+    ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+
+  const normalizedEmail = email.toLowerCase();
+  const isDemoServiceAccount =
+    (normalizedEmail === 'demo123@gmail.com' && password === '123456') ||
+    (normalizedEmail === 'demo1232gmail.com' && password === '123456') ||
+    (normalizedEmail === 'service@demo.com' && password === 'demo123');
+
+  if (!isLocalPreview || !isDemoServiceAccount) {
+    return null;
+  }
+
+  const serviceType: ServiceType = 'fire';
+  const profile: UserProfile = {
+    uid: 'local-demo-service',
+    name: 'Demo Fire Command',
+    email: normalizedEmail,
+    role: 'service',
+    serviceType
+  };
+
+  return {
+    user: {
+      uid: profile.uid,
+      email: normalizedEmail,
+      displayName: profile.name
+    } as User,
+    serviceType,
+    profile
+  };
 }
 
 function normalizeUserProfile(user: User, data?: FirestoreUserProfile | null): UserProfile {
@@ -92,6 +125,9 @@ export async function getUserProfile(user: User): Promise<UserProfile> {
 
 export async function registerCitizenAccount(data: CitizenRegisterData): Promise<User> {
   const auth = requireAuth();
+  if (!auth) {
+    throw new Error('Firebase auth is unavailable in this local preview. Configure VITE_FIREBASE_* to enable registration.');
+  }
   const credential = await createUserWithEmailAndPassword(auth, data.email, data.password);
   await updateProfile(credential.user, { displayName: data.name });
 
@@ -115,12 +151,21 @@ export async function registerCitizenAccount(data: CitizenRegisterData): Promise
 
 export async function loginCitizenAccount(email: string, password: string): Promise<User> {
   const auth = requireAuth();
+  if (!auth) {
+    throw new Error('Firebase auth is unavailable in this local preview. Configure VITE_FIREBASE_* to enable login.');
+  }
   const credential = await signInWithEmailAndPassword(auth, email, password);
   return credential.user;
 }
 
 export async function loginServiceAccount(email: string, password: string): Promise<ServiceLoginResult> {
+  const demoLogin = getLocalDemoServiceLogin(email, password);
+  if (demoLogin) return demoLogin;
+
   const auth = requireAuth();
+  if (!auth) {
+    throw new Error('Firebase auth is unavailable in this local preview. Configure VITE_FIREBASE_* to enable service login.');
+  }
   const credential = await signInWithEmailAndPassword(auth, email, password);
   const token = await getIdTokenResult(credential.user);
 

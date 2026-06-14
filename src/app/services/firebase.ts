@@ -20,7 +20,17 @@ export const firebaseEnabled = Boolean(
   firebaseConfig.appId
 );
 
+const isLocalPreview = Boolean(
+  import.meta.env.DEV ||
+  import.meta.env.MODE === 'development' ||
+  import.meta.env.MODE === 'preview'
+);
+
 const firebaseApp = firebaseEnabled ? initializeApp(firebaseConfig) : null;
+
+if (!firebaseEnabled && !isLocalPreview) {
+  console.warn('Firebase is not configured. Check your VITE_FIREBASE_* environment variables.');
+}
 
 export const firestore = firebaseApp ? getFirestore(firebaseApp) : null;
 export const firebaseStorage = firebaseApp ? getStorage(firebaseApp) : null;

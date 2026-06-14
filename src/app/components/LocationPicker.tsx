@@ -7,11 +7,12 @@ import { reverseGeocode } from '../services/geocoding';
 interface LocationPickerProps {
   currentLocation: string;
   onLocationChange: (location: string, coords: { lat: number; lng: number }) => void;
+  onRefreshLocation: () => void | Promise<void>;
   onClose: () => void;
   country: AseanCountry;
 }
 
-export function LocationPicker({ currentLocation, onLocationChange, onClose, country }: LocationPickerProps) {
+export function LocationPicker({ currentLocation, onLocationChange, onRefreshLocation, onClose, country }: LocationPickerProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredCities, setFilteredCities] = useState(country.cities);
 
@@ -94,6 +95,13 @@ export function LocationPicker({ currentLocation, onLocationChange, onClose, cou
           >
             <Navigation className="w-5 h-5 text-white" />
             <span className="font-medium text-white">Use Current GPS Location</span>
+          </button>
+          <button
+            onClick={() => { void onRefreshLocation(); }}
+            className="mt-3 w-full rounded-xl border border-blue-500/30 bg-white py-3 px-4 flex items-center justify-center gap-2 text-blue-600 transition hover:bg-blue-50"
+          >
+            <Navigation className="w-5 h-5" />
+            <span className="font-medium">Refresh Location</span>
           </button>
         </div>
 

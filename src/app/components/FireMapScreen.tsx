@@ -67,20 +67,21 @@ export function FireMapScreen({ userLocation, countryCode, onBack, language }: F
           reports={reports}
           cameras={cameras}
           onCameraSelect={setSelectedCamera}
+          liveGpsByService={{}}
         />
-        <div className="absolute right-5 top-6 z-10 rounded-2xl bg-[#30354f]/95 p-4 text-[13px] text-white shadow-lg backdrop-blur">
-          <div className="mb-2 flex items-center gap-2 text-[13px] font-semibold text-white">
+        <div className="absolute right-5 top-6 z-10 rounded-2xl bg-[#30354f]/95 p-3 text-[12px] text-white shadow-lg backdrop-blur">
+          <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold text-white">
             <AlertTriangle className="h-4 w-4 text-red-400" />
             {tr('map.dangerZones')}
           </div>
-          <div className="space-y-2 text-gray-200">
-            <div className="flex items-center gap-2"><span className="h-3.5 w-3.5 rounded-full bg-red-600/90" /> {tr('map.critical')}</div>
-            <div className="flex items-center gap-2"><span className="h-3.5 w-3.5 rounded-full bg-orange-500/90" /> {tr('map.high')}</div>
-            <div className="flex items-center gap-2"><span className="h-3.5 w-3.5 rounded-full bg-yellow-500/90" /> {tr('map.yellow')}</div>
-            <div className="flex items-center gap-2"><span className="h-3.5 w-3.5 rounded-full bg-green-500/90" /> {tr('map.watch')}</div>
+          <div className="space-y-1.5 text-gray-200">
+            <div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-red-600/90" /> {tr('map.critical')}</div>
+            <div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-orange-500/90" /> {tr('map.high')}</div>
+            <div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-yellow-500/90" /> {tr('map.yellow')}</div>
+            <div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-green-500/90" /> {tr('map.watch')}</div>
           </div>
         </div>
-        <div className="hidden absolute right-3 top-3 z-10 rounded-lg border border-slate-700 bg-slate-950/90 px-3 py-2 text-xs shadow-lg backdrop-blur">
+        <div className="absolute left-5 top-6 z-10 rounded-2xl bg-slate-950/85 px-3 py-2 text-[12px] text-white shadow-lg backdrop-blur">
           <span className={trafficEnabled ? 'text-emerald-300' : 'text-yellow-300'}>
             {tr('map.traffic')}: {trafficEnabled ? tr('map.live') : tr('map.apiKeyNeeded')}
           </span>
@@ -88,7 +89,7 @@ export function FireMapScreen({ userLocation, countryCode, onBack, language }: F
       </div>
 
       <div className="absolute bottom-9 left-0 right-0 px-6">
-        <div className="grid grid-cols-3 gap-3 rounded-lg bg-[#30354f]/95 px-5 py-4 text-white shadow-lg">
+        <div className="grid grid-cols-3 gap-3 rounded-2xl bg-[#30354f]/95 px-4 py-4 text-white shadow-lg">
               <div>
                 <div className="flex items-center gap-2 mb-1">
                   <Ambulance className="w-4 h-4 text-blue-400" />
@@ -113,13 +114,13 @@ export function FireMapScreen({ userLocation, countryCode, onBack, language }: F
                 <p className="text-[22px] font-bold leading-6 text-white">{countByService('police')}</p>
               </div>
         </div>
-        <div className="hidden mt-3 items-center justify-center gap-4 text-xs text-gray-500">
-          <span>{reports.length} {tr('map.activeLocations')}</span>
+        <div className="mt-3 flex items-center justify-center gap-4 text-[11px] text-gray-300">
+          <span>{reports.length} active reports</span>
           <span className="flex items-center gap-1.5 text-red-300">
-            <AlertTriangle className="h-3.5 w-3.5" /> {reports.filter(report => report.injuryScale >= 8).length} {tr('map.criticalZones')}
+            <AlertTriangle className="h-3.5 w-3.5" /> {reports.filter(report => report.injuryScale >= 8).length} critical zones
           </span>
           <span className="flex items-center gap-1.5 text-emerald-300">
-            <Video className="h-3.5 w-3.5" /> {cameras.length} {tr('map.publicCctv')}
+            <Video className="h-3.5 w-3.5" /> {cameras.length} public CCTV
           </span>
         </div>
       </div>

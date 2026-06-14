@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Ambulance, Flame, Shield, Clock, MapPin, AlertTriangle, Phone, Navigation, Filter, Radio, Edit, MessageSquare, ImageOff, ArrowLeft, User, CheckCircle2, Siren, Camera, Upload, ChevronDown, Home, ChevronRight } from 'lucide-react';
+import { useRef, useState, useEffect } from 'react';
+import { Ambulance, Flame, Shield, Clock, MapPin, AlertTriangle, Phone, Navigation, Filter, Radio, Edit, MessageSquare, ImageOff, ArrowLeft, User, CheckCircle2, Siren, Camera, Upload, ChevronDown, Home } from 'lucide-react';
 import { EmergencyMap } from './EmergencyMap.tsx';
 import { IPhoneStatusBar } from './IPhoneStatusBar';
 import { toast } from 'sonner';
@@ -9,9 +9,12 @@ import { createServiceStatuses, getOverallStatus, getReportServices, getServiceS
 import { cleanupExpiredReports, replaceReports } from '../services/reportStorage';
 import type { AseanCountry } from '../config/asean';
 import { citizenContactNumber } from '../config/contacts';
+import { serviceUnitConfig } from '../config/serviceUnits';
 import { fetchDrivingRoute } from '../services/routing';
+import type { DrivingRoute } from '../services/routing';
 import { updateIncidentStatus } from '../services/incidentsApi';
 import { PrivacyImage } from './PrivacyImage';
+import { getServiceDisplayLabel } from '../utils/serviceLabels';
 
 type EmergencyReport = Omit<StoredEmergencyReport, 'timestamp'> & {
   timestamp: Date;
@@ -24,17 +27,23 @@ interface UnitCandidate extends UnitAssignment {
 interface EmergencyServiceDashboardProps {
   serviceType: ServiceType;
   onOpenChat: (reportId: string) => void;
+  onCallCitizen: (report: EmergencyReport) => void;
   onBack: () => void;
   country: AseanCountry;
   canViewSensitiveMedia: boolean;
 }
 
-export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, country, canViewSensitiveMedia }: EmergencyServiceDashboardProps) {
+export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitizen, onBack, country, canViewSensitiveMedia }: EmergencyServiceDashboardProps) {
   const [reports, setReports] = useState<EmergencyReport[]>([]);
   const [selectedReport, setSelectedReport] = useState<EmergencyReport | null>(null);
   const [detailMode, setDetailMode] = useState<'detail' | 'closure'>('detail');
   const [filter, setFilter] = useState<'all' | 'pending' | 'responding'>('pending');
   const [isSharingGps, setIsSharingGps] = useState(false);
+  const [detailRoute, setDetailRoute] = useState<DrivingRoute | null>(null);
+  const [closureOutcome, setClosureOutcome] = useState('resolved');
+  const [closureSummary, setClosureSummary] = useState('');
+  const [closurePhoto, setClosurePhoto] = useState<string | null>(null);
+  const closurePhotoInputRef = useRef<HTMLInputElement>(null);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [unitCandidates, setUnitCandidates] = useState<UnitCandidate[]>([]);
   const [isCalculatingUnits, setIsCalculatingUnits] = useState(false);
@@ -108,8 +117,16 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
   const colors = serviceColors[serviceType];
   const theme = serviceTheme[serviceType];
   const serviceTitle = theme.title;
-  const unitIds = { ambulance: 'EMT-42', fire: 'FIRE-15', police: 'PD-89' };
-  const unitPrefixes = { ambulance: 'EMT', fire: 'FIRE', police: 'PD' };
+  const unitIds = {
+    ambulance: serviceUnitConfig.ambulance.unit,
+    fire: serviceUnitConfig.fire.unit,
+    police: serviceUnitConfig.police.unit
+  };
+  const unitPrefixes = {
+    ambulance: serviceUnitConfig.ambulance.prefix,
+    fire: serviceUnitConfig.fire.prefix,
+    police: serviceUnitConfig.police.prefix
+  };
   const serviceReports = reports.filter(r =>
     getReportServices(r).includes(serviceType) &&
     (!r.countryCode || r.countryCode === country.code)
@@ -122,6 +139,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
       ? ['responding', 'arrived'].includes(getServiceStatus(r, serviceType))
       : getServiceStatus(r, serviceType) === filter
   ).sort((a, b) => b.injuryScale - a.injuryScale);
+  const doneReportsCount = serviceReports.filter(r => getServiceStatus(r, serviceType) === 'done').length;
 
   const getInjuryScaleColor = (scale: number) => {
     if (scale >= 8) return 'text-red-400';
@@ -135,6 +153,12 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
     if (scale >= 5) return 'SEVERE';
     if (scale >= 3) return 'MODERATE';
     return 'MINOR';
+  };
+
+  const getScaleLevelLabel = (scale: number) => {
+    if (scale >= 8) return 'High';
+    if (scale >= 5) return 'Medium';
+    return 'Small';
   };
 
   const createAuditEntry = (
@@ -151,7 +175,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
   const persistStatusUpdate = (
     updatedReports: EmergencyReport[],
     reportId: string,
-    status: 'responding' | 'arrived' | 'resolved',
+    status: 'responding' | 'arrived' | 'resolved' | 'done',
     assignment?: UnitAssignment
   ) => {
     setReports(updatedReports);
@@ -174,8 +198,9 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
         lng: serviceLocation.coords.lng + offset.lng
       };
       const route = await fetchDrivingRoute(origin, destination);
+      const unitNumber = serviceUnitConfig[serviceType].baseNumber + index;
       return {
-        unit: `${unitPrefixes[serviceType]}-${String(42 + index).padStart(2, '0')}`,
+        unit: `${unitPrefixes[serviceType]}-${String(unitNumber).padStart(2, '0')}`,
         assignedAt: new Date().toISOString(),
         etaMinutes: route ? Math.max(1, Math.ceil(route.durationSeconds / 60)) : 99,
         distanceKm: route ? route.distanceMeters / 1000 : 99,
@@ -194,6 +219,15 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
     if (getServiceStatus(report, serviceType) === 'pending') void calculateNearestUnits(report);
   };
 
+  const openClosureReport = (report: EmergencyReport) => {
+    setSelectedReport(report);
+    setDetailMode('closure');
+    const existingClosure = report.serviceClosureReports?.[serviceType];
+    setClosureOutcome(existingClosure?.outcome ?? 'resolved');
+    setClosureSummary(existingClosure?.summary ?? '');
+    setClosurePhoto(existingClosure?.photo ?? null);
+  };
+
   const handleRespond = (reportId: string, assignment?: UnitAssignment) => {
     const selectedAssignment = assignment ?? unitCandidates[0];
     const updatedReports = reports.map(r =>
@@ -210,13 +244,36 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
   };
 
   const handleResolve = (reportId: string) => {
+    if (!closurePhoto) {
+      toast.error('Upload a closure photo before closing the incident');
+      return;
+    }
+    if (!closureSummary.trim()) {
+      toast.error('Write a resolution summary before closing the incident');
+      return;
+    }
+
     const updatedReports = reports.map(r =>
       r.id === reportId
-        ? updateUnitStatus(r, 'resolved', undefined, createAuditEntry('report_resolved', 'Report marked resolved'))
+        ? {
+            ...updateUnitStatus(r, 'done', undefined, createAuditEntry('report_resolved', 'Report marked done')),
+            serviceClosureReports: {
+              ...r.serviceClosureReports,
+              [serviceType]: {
+                outcome: closureOutcome,
+                summary: closureSummary.trim(),
+                photo: closurePhoto,
+                closedAt: new Date().toISOString()
+              }
+            }
+          }
         : r
     );
-    persistStatusUpdate(updatedReports, reportId, 'resolved');
+    persistStatusUpdate(updatedReports, reportId, 'done');
     setSelectedReport(null);
+    setDetailMode('detail');
+    setFilter('all');
+    toast.success('Incident closed and counted as Done');
   };
 
   const handleArrived = (reportId: string) => {
@@ -231,7 +288,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
 
   const updateUnitStatus = (
     report: EmergencyReport,
-    status: 'responding' | 'arrived' | 'resolved',
+    status: 'responding' | 'arrived' | 'resolved' | 'done',
     assignment?: UnitAssignment,
     auditEntry?: AuditEntry
   ) => {
@@ -258,8 +315,19 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
       return;
     }
 
+    const publishFallbackLocation = () => {
+      publishLiveGps({
+        service: serviceType,
+        unit: unitIds[serviceType],
+        ...serviceLocation.coords,
+        updatedAt: Date.now()
+      });
+      setIsSharingGps(true);
+      toast.success('Live GPS sharing enabled from service location');
+    };
+
     if (!navigator.geolocation) {
-      toast.error('GPS is not supported on this device');
+      publishFallbackLocation();
       return;
     }
 
@@ -275,7 +343,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
         setIsSharingGps(true);
         toast.success('Live GPS sharing enabled');
       },
-      () => toast.error('Location permission is required to share live GPS'),
+      publishFallbackLocation,
       { enableHighAccuracy: true }
     );
   };
@@ -292,6 +360,13 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
       updatedAt: Date.now()
     });
     toast.success('Service location published to live tracking');
+  };
+
+  const handleClosurePhotoChange = (file: File | undefined) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setClosurePhoto(typeof reader.result === 'string' ? reader.result : null);
+    reader.readAsDataURL(file);
   };
 
   useEffect(() => {
@@ -312,7 +387,25 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
     return () => navigator.geolocation.clearWatch(watchId);
   }, [isSharingGps, serviceType]);
 
-  const serviceLabel = serviceType === 'ambulance' ? 'Medic' : serviceType === 'fire' ? 'Fire Fighters' : 'Police';
+  useEffect(() => {
+    if (!selectedReport?.coords) {
+      setDetailRoute(null);
+      return;
+    }
+
+    let cancelled = false;
+    const assignedUnit = selectedReport.assignedUnits?.[serviceType];
+    const origin = assignedUnit?.origin ?? serviceLocation.coords;
+    void fetchDrivingRoute(origin, selectedReport.coords).then(route => {
+      if (!cancelled) setDetailRoute(route);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedReport?.id, selectedReport?.coords?.lat, selectedReport?.coords?.lng, selectedReport?.assignedUnits, serviceLocation.coords.lat, serviceLocation.coords.lng, serviceType]);
+
+  const serviceLabel = getServiceDisplayLabel(serviceType);
   const serviceUnit = unitIds[serviceType].replace('-', ' ');
   const severityLabel = selectedReport ? getInjuryScaleLabel(selectedReport.injuryScale) : 'MEDIUM';
   const severityBadge = severityLabel === 'CRITICAL'
@@ -352,11 +445,33 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
 
           <section className="space-y-3">
             <h2 className="text-[14px] font-bold leading-5">Photo</h2>
-            <div className="flex h-40 flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[#e5e7eb] bg-[#f9fafb] text-[#9ca3af]">
-              <span className="mb-2 rounded-full bg-white p-2"><Camera className="h-6 w-6" /></span>
-              <p className="text-[12px] leading-4">Take a Photo</p>
-            </div>
-            <button className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#0c3249] px-2 py-3 text-[12px] font-bold leading-4 text-white">
+            <button
+              type="button"
+              onClick={() => closurePhotoInputRef.current?.click()}
+              className="flex h-40 w-full flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-[#e5e7eb] bg-[#f9fafb] text-[#9ca3af]"
+            >
+              {closurePhoto ? (
+                <img src={closurePhoto} alt="Closure evidence" className="h-full w-full object-cover" />
+              ) : (
+                <>
+                  <span className="mb-2 rounded-full bg-white p-2"><Camera className="h-6 w-6" /></span>
+                  <p className="text-[12px] leading-4">Take a Photo</p>
+                </>
+              )}
+            </button>
+            <input
+              ref={closurePhotoInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(event) => handleClosurePhotoChange(event.target.files?.[0])}
+            />
+            <button
+              type="button"
+              onClick={() => closurePhotoInputRef.current?.click()}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#0c3249] px-2 py-3 text-[12px] font-bold leading-4 text-white"
+            >
               <Upload className="h-4 w-4" />
               Upload Photo
             </button>
@@ -364,11 +479,11 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
 
           <section className="space-y-2">
             <h2 className="text-[14px] font-bold leading-5">Emergency Resources</h2>
-            <div className="flex justify-between gap-2">
+            <div className="flex flex-wrap gap-2">
               {(['ambulance', 'fire', 'police'] as const).map(service => {
                 const active = getReportServices(selectedReport).includes(service);
                 const Icon = serviceIcons[service];
-                const label = service === 'ambulance' ? 'Medic' : service === 'fire' ? 'Fire Fighters' : 'Police';
+                const label = getServiceDisplayLabel(service, `${selectedReport.emergencyType ?? ''} ${selectedReport.detectedIndicators?.join(' ') ?? ''} ${selectedReport.description}`);
                 return (
                   <span
                     key={service}
@@ -385,15 +500,26 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
 
           <section className="space-y-3">
             <h2 className="text-[14px] font-bold leading-5">Incident Outcome</h2>
-            <button className="flex h-9 w-full items-center justify-between rounded-[10px] border border-[#e5e7eb] bg-[#f9fafb] px-4 text-[12px] font-semibold uppercase leading-4">
-              Resolved
-              <ChevronDown className="h-4 w-4 text-[#9ca3af]" />
-            </button>
+            <div className="relative">
+              <select
+                value={closureOutcome}
+                onChange={(event) => setClosureOutcome(event.target.value)}
+                className="h-11 w-full appearance-none rounded-[10px] border border-[#e5e7eb] bg-[#f9fafb] px-4 text-[12px] font-semibold uppercase leading-4 outline-none"
+              >
+                <option value="resolved">Resolved</option>
+                <option value="continued-monitoring">Continue Monitoring</option>
+                <option value="transferred">Transferred</option>
+                <option value="false-alarm">False Alarm</option>
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9ca3af]" />
+            </div>
           </section>
 
           <section className="space-y-3">
             <h2 className="text-[14px] font-bold leading-5">Resolution Summary</h2>
             <textarea
+              value={closureSummary}
+              onChange={(event) => setClosureSummary(event.target.value)}
               className="h-28 w-full resize-none rounded-xl border border-[#e5e7eb] bg-[#f9fafb] p-4 text-[12px] leading-5 outline-none placeholder:text-[#9ca3af]"
               placeholder="Describe how the incident was handled and its final status."
             />
@@ -475,7 +601,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
                   <MessageSquare className="h-5 w-5" />
                 </button>
                 <button
-                  onClick={() => { window.location.href = `tel:${selectedReport.reporterPhone ?? citizenContactNumber}`; }}
+                  onClick={() => onCallCitizen(selectedReport)}
                   className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#0c3249] text-white"
                   aria-label="Call reporter"
                 >
@@ -486,6 +612,19 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
             <div className="mt-4 space-y-3 border-t border-[#0c3249]/10 pt-3 text-[14px] leading-5">
               <p className="flex items-center gap-2"><MapPin className="h-4 w-4" />{selectedReport.location}</p>
               <p className="flex items-center gap-2"><Clock className="h-4 w-4" />{selectedReport.timestamp.toLocaleString()}</p>
+            </div>
+          </section>
+
+          <section className="rounded-lg border-l-[5px] bg-white p-4 shadow-[0_4px_12px_rgba(0,0,0,0.10)]" style={{ borderLeftColor: theme.accent }}>
+            <div className="flex items-center justify-between text-xs">
+              <h3 className="font-semibold uppercase leading-4 tracking-[0.6px] text-[#42474d]">Priority Scale</h3>
+              <span className="font-bold" style={{ color: theme.accent }}>{selectedReport.injuryScale.toFixed(1)}/10</span>
+            </div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full border border-[#0c324a]/10 bg-[#eef3f7]">
+              <div
+                className="h-full transition-all"
+                style={{ width: `${selectedReport.injuryScale * 10}%`, backgroundColor: theme.accent }}
+              />
             </div>
           </section>
 
@@ -538,7 +677,13 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
 
           {selectedReport.coords && (
             <div className="overflow-hidden rounded-xl border border-[#0c3249]/10">
-              <EmergencyMap lat={selectedReport.coords.lat} lng={selectedReport.coords.lng} serviceType={serviceType} />
+              <EmergencyMap
+                lat={selectedReport.coords.lat}
+                lng={selectedReport.coords.lng}
+                serviceType={serviceType}
+                serviceLocation={assignedUnit?.origin ?? serviceLocation.coords}
+                route={detailRoute}
+              />
             </div>
           )}
 
@@ -552,14 +697,39 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
             </button>
           )}
           {status === 'responding' && (
-            <button onClick={() => handleArrived(selectedReport.id)} className="flex w-full items-center justify-center rounded-xl bg-[#0c3249] p-4 text-[16px] font-bold leading-6 text-white">
-              Mark Arrived
-            </button>
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={toggleGpsSharing} className={`flex items-center justify-center gap-2 rounded-xl p-4 text-[16px] font-bold leading-6 text-white ${isSharingGps ? 'bg-green-600' : 'bg-[#0c3249]'}`}>
+                <Radio className={`h-5 w-5 ${isSharingGps ? 'animate-pulse' : ''}`} />
+                Share Live GPS
+              </button>
+              <button onClick={() => openClosureReport(selectedReport)} className="flex items-center justify-center rounded-xl bg-[#186a17] p-4 text-[16px] font-bold leading-6 text-white">
+                Done
+              </button>
+            </div>
           )}
           {status === 'arrived' && (
-            <button onClick={() => setDetailMode('closure')} className="flex w-full items-center justify-center rounded-xl bg-[#186a17] p-4 text-[16px] font-bold leading-6 text-white">
+              <button onClick={() => openClosureReport(selectedReport)} className="flex w-full items-center justify-center rounded-xl bg-[#186a17] p-4 text-[16px] font-bold leading-6 text-white">
               Create Closure Report
             </button>
+          )}
+          {status === 'done' && (
+            <section className="rounded-xl border border-[#186a17]/20 bg-[#186a17]/10 p-4">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#186a17] text-white">
+                  <CheckCircle2 className="h-5 w-5" />
+                </span>
+                <div>
+                  <p className="text-[16px] font-bold leading-6 text-[#186a17]">Incident Closed</p>
+                  <p className="text-[12px] leading-4 text-[#0c3249]/60">This report is now counted in Done.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => openClosureReport(selectedReport)}
+                className="mt-4 flex w-full items-center justify-center rounded-xl bg-[#186a17] p-4 text-[16px] font-bold leading-6 text-white"
+              >
+                View Closure Report
+              </button>
+            </section>
           )}
         </main>
 
@@ -603,7 +773,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
         <div className="grid grid-cols-3 gap-3 pt-2">
           <div className="flex h-[90px] flex-col items-start gap-1 rounded-lg border border-white/10 bg-white/10 p-4 backdrop-blur-sm">
             <p className="text-[12px] font-semibold uppercase leading-4 tracking-[0.6px] text-white/70">Done</p>
-            <p className="text-[30px] font-bold leading-9">0</p>
+            <p className="text-[30px] font-bold leading-9">{doneReportsCount}</p>
           </div>
           <div className="flex h-[90px] flex-col items-start gap-1 rounded-lg border border-white/10 bg-white/10 p-4 backdrop-blur-sm">
             <p className="text-[12px] font-semibold uppercase leading-4 tracking-[0.6px] text-white/70">Pending</p>
@@ -705,10 +875,15 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
                       <div className="text-[14px] font-bold uppercase leading-5" style={{ color: theme.accent }}>
                         {getInjuryScaleLabel(report.injuryScale)}
                       </div>
-                      <div className="flex items-center gap-1.5 text-[11px] text-[#9ca3af]">
-                        <Clock className="w-3.5 h-3.5" />
-                        {Math.floor((Date.now() - report.timestamp.getTime()) / 60000)}m ago
-                      </div>
+                      {getServiceStatus(report, serviceType) === 'done' ? (
+                        <div className="rounded-full bg-[#186a17]/10 px-2.5 py-1 text-[11px] font-bold text-[#186a17]">
+                          Done
+                        </div>
+                      ) : (
+                        <div className="rounded-full bg-[#f3f6f8] px-2.5 py-1 text-[11px] font-bold text-[#6b7280]">
+                          Scale: {getScaleLevelLabel(report.injuryScale)}
+                        </div>
+                      )}
                     </div>
 
                     <p className="mb-3 line-clamp-2 text-[13px] leading-5 text-[#42474d]">
@@ -720,91 +895,70 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onBack, cou
                       <span className="truncate font-mono">{report.location}</span>
                     </div>
 
-                    {/* Injury Scale Bar */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-[#9ca3af]">Priority Scale</span>
-                        <span className="font-bold" style={{ color: theme.accent }}>
-                          {report.injuryScale.toFixed(1)}/10
-                        </span>
-                      </div>
-                      <div className="h-2 overflow-hidden rounded-full border border-[#0c324a]/10 bg-[#eef3f7]">
-                        <div
-                          className="h-full transition-all"
-                          style={{ width: `${report.injuryScale * 10}%`, backgroundColor: theme.accent }}
-                        />
-                      </div>
-                    </div>
                   </div>
                 </div>
 
                 {/* Actions */}
-                <div className="grid grid-cols-3 gap-2">
-                  {getServiceStatus(report, serviceType) === 'pending' && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openReport(report);
-                      }}
-                      className="col-span-2 flex items-center justify-center gap-2 rounded-2xl bg-[#c11720] py-3 text-[16px] font-bold leading-6 text-white shadow-lg transition hover:opacity-90"
-                    >
-                      <Siren className="h-5 w-5" />
-                      Dispatch Unit
-                    </button>
-                  )}
-                  {getServiceStatus(report, serviceType) === 'responding' && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleArrived(report.id);
-                      }}
-                      className="col-span-2 rounded-lg bg-[#0c324a] py-2.5 text-xs font-semibold text-white shadow-lg transition hover:opacity-90"
-                    >
-                      Mark Arrived
-                    </button>
-                  )}
-                  {getServiceStatus(report, serviceType) === 'arrived' && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedReport(report);
-                        setDetailMode('closure');
-                      }}
-                      className="col-span-2 rounded-lg bg-emerald-600 py-2.5 text-xs font-semibold text-white shadow-lg transition hover:opacity-90"
-                    >
-                      Closure Report
-                    </button>
-                  )}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpenChat(report.id);
-                    }}
-                    className="flex items-center justify-center rounded-lg bg-[#0c324a] py-2.5 text-white transition hover:bg-[#123f59]"
-                    aria-label="Open emergency chat"
-                  >
-                    <MessageSquare className="w-5 h-5" />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      window.location.href = `tel:${report.reporterPhone ?? citizenContactNumber}`;
-                    }}
-                    className="flex items-center justify-center rounded-lg bg-[#0c324a] py-2.5 text-white transition hover:bg-[#123f59]"
-                    aria-label="Call reporter"
-                  >
-                    <Phone className="w-5 h-5" />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      window.open(`https://maps.google.com/?q=${report.location}`, '_blank');
-                    }}
-                    className="flex items-center justify-center rounded-lg bg-[#0c324a] py-2.5 text-white transition hover:bg-[#123f59]"
-                    aria-label="Open report location in maps"
-                  >
-                    <Navigation className="w-5 h-5" />
-                  </button>
+                <div className="space-y-2">
+                  <div className={`grid gap-2 ${getServiceStatus(report, serviceType) === 'responding' ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                    {getServiceStatus(report, serviceType) === 'pending' && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openReport(report);
+                        }}
+                        className="flex items-center justify-center gap-2 rounded-2xl bg-[#c11720] py-3 text-[16px] font-bold leading-6 text-white shadow-lg transition hover:opacity-90"
+                      >
+                        <Siren className="h-5 w-5" />
+                        Dispatch Unit
+                      </button>
+                    )}
+                    {getServiceStatus(report, serviceType) === 'responding' && (
+                      <>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleGpsSharing();
+                        }}
+                        className={`flex items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-semibold text-white shadow-lg transition hover:opacity-90 ${isSharingGps ? 'bg-green-600' : 'bg-[#0c324a]'}`}
+                      >
+                        <Radio className={`h-4 w-4 ${isSharingGps ? 'animate-pulse' : ''}`} />
+                        Share Live GPS
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openClosureReport(report);
+                        }}
+                        className="rounded-lg bg-[#186a17] py-2.5 text-xs font-semibold text-white shadow-lg transition hover:opacity-90"
+                      >
+                        Done
+                      </button>
+                      </>
+                    )}
+                    {getServiceStatus(report, serviceType) === 'arrived' && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openClosureReport(report);
+                        }}
+                        className="rounded-lg bg-emerald-600 py-2.5 text-xs font-semibold text-white shadow-lg transition hover:opacity-90"
+                      >
+                        Closure Report
+                      </button>
+                    )}
+                    {getServiceStatus(report, serviceType) === 'done' && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openClosureReport(report);
+                        }}
+                        className="rounded-lg bg-[#186a17] py-2.5 text-xs font-semibold text-white shadow-lg transition hover:opacity-90"
+                      >
+                        View Closure Report
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

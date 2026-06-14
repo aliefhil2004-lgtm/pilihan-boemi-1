@@ -1,5 +1,6 @@
 export type ServiceType = 'ambulance' | 'fire' | 'police';
-export type ReportStatus = 'pending' | 'responding' | 'arrived' | 'resolved';
+export type ResponseRole = ServiceType | 'disaster-response';
+export type ReportStatus = 'pending' | 'responding' | 'arrived' | 'resolved' | 'done';
 
 export interface UnitAssignment {
   unit: string;
@@ -40,6 +41,8 @@ export interface StoredEmergencyReport {
   status: ReportStatus;
   service?: ServiceType;
   services?: ServiceType[];
+  responsePlan?: ResponseRole[];
+  priorityRole?: ResponseRole;
   serviceStatuses?: Partial<Record<ServiceType, ReportStatus>>;
   assignedUnits?: Partial<Record<ServiceType, UnitAssignment>>;
   auditTrail?: AuditEntry[];
@@ -47,11 +50,20 @@ export interface StoredEmergencyReport {
   detectedIndicators?: string[];
   privacyRegions?: PrivacyRegion[];
   countryCode?: string;
+  serviceClosureReports?: Partial<Record<ServiceType, {
+    outcome: string;
+    summary: string;
+    photo: string | null;
+    closedAt: string;
+  }>>;
 }
 
 export function getReportServices(
-  report: Pick<StoredEmergencyReport, 'service' | 'services'>
+  report: Pick<StoredEmergencyReport, 'service' | 'services' | 'responsePlan'>
 ): ServiceType[] {
+  if (report.responsePlan?.length) {
+    return report.responsePlan.filter((service): service is ServiceType => service === 'ambulance' || service === 'fire' || service === 'police');
+  }
   if (report.services?.length) return [...new Set(report.services)];
   return [report.service ?? 'ambulance'];
 }
@@ -77,13 +89,14 @@ export function getOverallStatus(
   const values = Object.values(statuses);
   if (!values.length) return fallback;
   if (values.every(status => status === 'resolved')) return 'resolved';
+  if (values.every(status => status === 'done')) return 'done';
   if (
     values.some(status => status === 'arrived') &&
     values.every(status => status === 'arrived' || status === 'resolved')
   ) {
     return 'arrived';
   }
-  if (values.some(status => status === 'responding' || status === 'arrived' || status === 'resolved')) {
+  if (values.some(status => status === 'responding' || status === 'arrived' || status === 'resolved' || status === 'done')) {
     return 'responding';
   }
   return 'pending';

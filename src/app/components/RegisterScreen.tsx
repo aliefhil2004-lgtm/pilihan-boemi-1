@@ -17,7 +17,7 @@ interface RegisterData {
   password: string;
   name: string;
   phone: string;
-  identityType: 'national-id' | 'passport' | 'drivers-license';
+  identityType: 'national-id' | 'passport';
   identityNumber: string;
   serviceType?: 'ambulance' | 'fire' | 'police';
   credentialPhoto?: string;
@@ -29,7 +29,7 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole, country,
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [identityType, setIdentityType] = useState<'national-id' | 'passport' | 'drivers-license'>('national-id');
+  const [identityType, setIdentityType] = useState<'national-id' | 'passport'>('national-id');
   const [identityNumber, setIdentityNumber] = useState('');
   const tr = (key: Parameters<typeof t>[1]) => t(language, key);
 
@@ -151,7 +151,6 @@ export function RegisterScreen({ onRegister, onBackToLogin, forcedRole, country,
                 >
                   <option value="national-id">National ID</option>
                   <option value="passport">Passport</option>
-                  <option value="drivers-license">Driver's License</option>
                 </select>
                 <div className="relative">
                   <IdCard className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9aa3b1]" />

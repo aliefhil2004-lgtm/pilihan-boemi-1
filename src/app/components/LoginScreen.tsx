@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, EyeOff, ShieldPlus } from 'lucide-react';
+import { Check, Eye, EyeOff, ShieldPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { t, type Language } from '../i18n';
 
@@ -12,8 +12,12 @@ interface LoginScreenProps {
 
 export function LoginScreen({ onLogin, onGoToRegister, forcedRole, language }: LoginScreenProps) {
   const loginRole = forcedRole ?? 'civilian';
-  const [email, setEmail] = useState('');
+  const rememberKey = `rememberLogin:${loginRole}`;
+  const rememberedEmail = typeof window !== 'undefined' ? localStorage.getItem(rememberKey) ?? '' : '';
+  const [email, setEmail] = useState(rememberedEmail);
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(Boolean(rememberedEmail));
   const tr = (key: Parameters<typeof t>[1]) => t(language, key);
   const isServicePortal = loginRole === 'service';
 
@@ -25,6 +29,11 @@ export function LoginScreen({ onLogin, onGoToRegister, forcedRole, language }: L
 
     // Simple validation - in real app, this would call an API
     if (email && password.length >= 6) {
+      if (rememberMe) {
+        localStorage.setItem(rememberKey, email);
+      } else {
+        localStorage.removeItem(rememberKey);
+      }
       await onLogin(loginRole, { email, password });
     } else {
       toast.error(tr('auth.invalidCredentials'));
@@ -63,23 +72,37 @@ export function LoginScreen({ onLogin, onGoToRegister, forcedRole, language }: L
               <label className="mb-2 block text-[14px] font-medium">Password</label>
               <div className="relative">
                 <input
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   className="h-[58px] w-full rounded-xl border border-[#d7dbe0] bg-white px-5 pr-12 text-[16px] text-[#0b3850] placeholder:text-[#8a8a8a] focus:border-[#6da5c4] focus:outline-none"
                 />
-                <EyeOff className="absolute right-5 top-1/2 h-5 w-5 -translate-y-1/2 text-[#737373]" />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(value => !value)}
+                  className="absolute right-4 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-lg text-[#737373] transition hover:bg-slate-50 hover:text-[#0b3850]"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
+                </button>
               </div>
             </div>
 
             <div className="flex items-center justify-between text-[14px]">
-              <label className="flex items-center gap-3">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#0b3850] text-white">
+              <button
+                type="button"
+                onClick={() => setRememberMe(value => !value)}
+                className="flex items-center gap-3 rounded-lg py-1 pr-2 text-left transition hover:bg-slate-50"
+                aria-pressed={rememberMe}
+              >
+                <span className={`flex h-8 w-8 items-center justify-center rounded-full border transition ${
+                  rememberMe ? 'border-[#0b3850] bg-[#0b3850] text-white' : 'border-[#d7dbe0] bg-white text-transparent'
+                }`}>
                   <Check className="h-5 w-5" />
                 </span>
                 Remember me
-              </label>
+              </button>
               <button className="font-medium text-[#0b3850]">Forgot password?</button>
             </div>
 

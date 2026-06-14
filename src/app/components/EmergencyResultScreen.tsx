@@ -1,15 +1,19 @@
-import { Flame, MapPin, MessageSquare, Phone, Radio } from 'lucide-react';
-import { useEffect } from 'react';
-import type { ServiceType } from '../types/emergency';
+import { ArrowLeft, CheckCircle2, Clock, MapPin, MessageSquare, Phone, Radio } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
+import { cleanupExpiredReports } from '../services/reportStorage';
+import { getReportServices, getServiceStatus, type ServiceType } from '../types/emergency';
 import type { PrivacyRegion } from '../types/emergency';
 import type { Language } from '../i18n';
 import { PrivacyImage } from './PrivacyImage';
+import { getServiceDisplayLabel } from '../utils/serviceLabels';
 
 interface EmergencyResultScreenProps {
   emergencyType: string;
   priority: 'Critical' | 'Medium' | 'Low';
   recommendedService: ServiceType;
   recommendedServices: ServiceType[];
+  reportId?: string;
   injuryScale: number;
   location: string;
   detectedIndicators?: string[];
@@ -19,14 +23,19 @@ interface EmergencyResultScreenProps {
   falseReportReason?: string;
   servicePhoneNumber: string;
   canViewSensitiveMedia: boolean;
+  onCancelReport: () => void;
+  onOpenChat: () => void;
+  onCallResponder: () => void;
   onViewDetails: () => void;
   onFalseReportDone: () => void;
   language: Language;
 }
 
 export function EmergencyResultScreen({
+  emergencyType,
   priority,
   recommendedServices,
+  reportId,
   injuryScale,
   location,
   detectedIndicators,
@@ -36,36 +45,118 @@ export function EmergencyResultScreen({
   falseReportReason,
   servicePhoneNumber,
   canViewSensitiveMedia,
+  onCancelReport,
+  onOpenChat,
+  onCallResponder,
   onViewDetails,
   onFalseReportDone
 }: EmergencyResultScreenProps) {
+  const [isAccepted, setIsAccepted] = useState(false);
+  const [trackingRequested, setTrackingRequested] = useState(false);
+
   useEffect(() => {
     if (!isFalseReport) return undefined;
     const timer = window.setTimeout(onFalseReportDone, 1800);
     return () => window.clearTimeout(timer);
   }, [isFalseReport, onFalseReportDone]);
 
+  useEffect(() => {
+    if (!reportId || isFalseReport) {
+      setIsAccepted(false);
+      return undefined;
+    }
+
+    const refreshStatus = () => {
+      const report = cleanupExpiredReports().find(item => item.id === reportId);
+      if (!report) {
+        setIsAccepted(false);
+        return;
+      }
+      const services = getReportServices(report);
+      setIsAccepted(services.some(service => getServiceStatus(report, service) !== 'pending'));
+    };
+
+    refreshStatus();
+    const interval = window.setInterval(refreshStatus, 1500);
+    window.addEventListener('storage', refreshStatus);
+    window.addEventListener('emergency-reports-updated', refreshStatus);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('storage', refreshStatus);
+      window.removeEventListener('emergency-reports-updated', refreshStatus);
+    };
+  }, [isFalseReport, reportId]);
+
+  const notifyWaitingForAcceptance = (feature = 'This feature') => {
+    toast.info(`${feature} can be accessed after emergency services accept the report.`);
+  };
+
+  const handleOpenChat = () => {
+    if (isFalseReport) return;
+    if (!isAccepted) {
+      notifyWaitingForAcceptance('Chat');
+      return;
+    }
+    onOpenChat();
+  };
+
+  const handleCallResponder = () => {
+    if (isFalseReport) return;
+    if (!isAccepted) {
+      notifyWaitingForAcceptance('Phone call');
+      return;
+    }
+    toast.success(`Calling assigned responder at ${servicePhoneNumber}`);
+    onCallResponder();
+  };
+
+  const handleLiveTrack = () => {
+    if (isFalseReport) return;
+    if (!isAccepted) setTrackingRequested(true);
+    onViewDetails();
+  };
+
   return (
-    <div className="flex h-full flex-col bg-white pb-24 text-[#0b3850]">
-      <div className="flex h-[88px] items-center gap-5 bg-white px-7 pt-[36px] shadow-[0_8px_24px_rgba(15,23,42,0.04)]">
-        <h1 className="text-[17px] font-extrabold">Report Detail</h1>
+    <div className="flex h-full flex-col bg-white pb-[104px] text-[#0b3850]">
+      <div className="grid h-[94px] grid-cols-[40px_1fr_auto] items-end gap-3 bg-white px-5 pb-5 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
+        <button
+          onClick={onCancelReport}
+          className="flex h-10 w-10 items-center justify-center rounded-lg text-[#0b3850] transition hover:bg-slate-50"
+          aria-label="Cancel report"
+        >
+          <ArrowLeft className="h-6 w-6" />
+        </button>
+        <h1 className="text-[20px] font-extrabold leading-8">Report Detail</h1>
+        <button
+          onClick={onCancelReport}
+          className="mb-1 rounded-lg px-2 py-1 text-[12px] font-bold text-[#cc1420] transition hover:bg-red-50"
+        >
+          Cancel
+        </button>
       </div>
 
-      <main className="app-scrollbar flex-1 overflow-y-auto px-6 py-5">
-        <div className="mx-auto max-w-sm space-y-5">
-          <section className={`rounded-lg p-4 text-center text-white ${isFalseReport ? 'bg-[#7a4b00]' : 'bg-[#14751b]'}`}>
-            <p className="text-[16px] font-bold">{isFalseReport ? 'False Report Detected' : 'Report Sent'}</p>
-            <p className="mt-1.5 text-[13px] leading-5 text-white/85">
-              {isFalseReport
-                ? falseReportReason ?? 'No clear emergency evidence was detected.'
-                : 'Report received. Stay safe and keep your phone available.'}
-            </p>
+      <main className="app-scrollbar flex-1 overflow-y-auto px-5 py-4">
+        <div className="mx-auto max-w-sm space-y-4">
+          <section className={`relative overflow-hidden rounded-[10px] px-5 py-4 text-center text-white ${isFalseReport ? 'bg-[#7a4b00]' : 'bg-[#14751b]'}`}>
+            {!isFalseReport && (
+              <span className="pointer-events-none absolute -right-3 -top-5 flex h-[76px] w-[76px] items-center justify-center rounded-full bg-white/15">
+                <CheckCircle2 className="h-11 w-11 text-white/40" />
+              </span>
+            )}
+            <div className="relative">
+              <p className="text-[18px] font-bold leading-6">{isFalseReport ? 'False Report Detected' : 'Report Sent'}</p>
+              <p className="mx-auto mt-1 max-w-[290px] text-[14px] leading-5 text-white/85">
+                {isFalseReport
+                  ? falseReportReason ?? 'No clear emergency evidence was detected.'
+                  : 'Report received. Stay safe and keep your phone available.'}
+              </p>
+            </div>
           </section>
 
-          <article className="rounded-2xl border border-[#e1e5ea] bg-white p-4">
+          <article className="rounded-[16px] border border-[#e1e5ea] bg-white p-5">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-[18px] font-extrabold">Building Fire Report</h2>
+                <h2 className="text-[22px] font-extrabold leading-7">Building Fire Report</h2>
                 <p className="mt-1 text-[13px] font-bold text-[#9aa3b1]">#RPT-001</p>
               </div>
               <span className="rounded-full border border-[#f7d36b] bg-[#fff5d8] px-3 py-1.5 text-[11px] font-bold text-[#e4a900]">
@@ -79,7 +170,7 @@ export function EmergencyResultScreen({
                 alt="Emergency assessment"
                 allowUnblurred={canViewSensitiveMedia}
                 wrapperClassName="mt-4"
-                className="h-[150px] w-full rounded-xl object-cover"
+                className="h-[181px] w-full rounded-[11px] object-cover"
                 privacyRegions={privacyRegions}
               />
             )}
@@ -92,13 +183,14 @@ export function EmergencyResultScreen({
                     service === 'fire' ? 'bg-[#ff5a0a]' : service === 'ambulance' ? 'bg-[#6da5c4]' : 'bg-[#2563eb]'
                   }`}
                 >
-                  {service === 'ambulance' ? 'Medic' : service[0].toUpperCase() + service.slice(1)}
+                  {getServiceDisplayLabel(service, `${emergencyType} ${detectedIndicators?.join(' ') ?? ''}`)}
                 </span>
               ))}
             </div>
 
-            <div className="mt-5 space-y-3 text-[13px]">
-              <p className="flex items-center gap-2.5"><MapPin className="h-[18px] w-[18px]" /><span>{location}</span></p>
+            <div className="mt-5 space-y-3 text-[16px] leading-5">
+              <p className="flex items-center gap-3"><MapPin className="h-[18px] w-[18px] shrink-0" /><span>{location}</span></p>
+              <p className="flex items-center gap-3"><Clock className="h-[18px] w-[18px] shrink-0" /><span>05/06/2026, 18:29:53</span></p>
               <p>Severity scale: <span className="font-extrabold text-[#d21a25]">{injuryScale}/10</span></p>
             </div>
 
@@ -115,25 +207,30 @@ export function EmergencyResultScreen({
         </div>
       </main>
 
-      <footer className="grid grid-cols-[50px_50px_1fr] gap-2 bg-white px-5 pb-3">
-        <button className="flex h-[50px] items-center justify-center rounded-lg bg-[#0b3850] text-white" aria-label="Open chat" disabled={isFalseReport}>
+      <footer className="absolute bottom-20 left-0 right-0 z-30 grid grid-cols-[50px_50px_1fr] gap-2 bg-white px-5 pb-3 pt-2">
+        <button
+          onClick={handleOpenChat}
+          className="flex h-[50px] items-center justify-center rounded-lg bg-[#0b3850] text-white transition hover:bg-[#123f59]"
+          aria-label="Open chat"
+        >
           <MessageSquare className="h-[18px] w-[18px]" />
         </button>
         <button
-          onClick={() => { window.location.href = `tel:${servicePhoneNumber}`; }}
-          className="flex h-[50px] items-center justify-center rounded-lg bg-[#0b3850] text-white disabled:opacity-50"
+          onClick={handleCallResponder}
+          className="flex h-[50px] items-center justify-center rounded-lg bg-[#0b3850] text-white transition hover:bg-[#123f59]"
           aria-label="Call responder"
-          disabled={isFalseReport}
         >
           <Phone className="h-[18px] w-[18px]" />
         </button>
         <button
-          onClick={onViewDetails}
-          className="flex h-[50px] w-full items-center justify-center gap-2 rounded-lg bg-[#cc1420] px-3 text-[14px] font-bold text-white shadow-lg transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+          onClick={handleLiveTrack}
+          className={`flex h-[50px] w-full items-center justify-center gap-2 rounded-lg px-3 text-[14px] font-bold text-white shadow-lg transition disabled:cursor-not-allowed disabled:bg-slate-300 ${
+            !isAccepted && trackingRequested ? 'bg-[#8a94a6] hover:bg-[#7b8496]' : 'bg-[#cc1420] hover:bg-red-700'
+          }`}
           disabled={isFalseReport}
         >
           <Radio className="h-[18px] w-[18px] shrink-0" />
-          <span className="truncate">Live Track Location</span>
+          <span className="truncate">{!isAccepted && trackingRequested ? 'Waiting for Acceptance' : 'Live Track Location'}</span>
         </button>
       </footer>
     </div>

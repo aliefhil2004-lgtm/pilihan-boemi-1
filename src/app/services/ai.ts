@@ -1,8 +1,9 @@
 import { analyzeEmergencyImage } from '../roboflow';
 import { analyzeEmergencyWithYolo } from './yolo';
 import { analyzeEmergencyTextWithNlp } from './nlp';
+import { detectPrivacyRegionsFromPhoto } from './privacyDetector';
 import type { PrivacyRegion } from '../types/emergency';
-import type { ServiceType } from '../types/emergency';
+import type { ResponseRole, ServiceType } from '../types/emergency';
 export type { ServiceType } from '../types/emergency';
 
 export interface AIResult {
@@ -11,6 +12,8 @@ export interface AIResult {
   severityScore: number;
   service: ServiceType;
   services: ServiceType[];
+  responsePlan: ResponseRole[];
+  priorityRole: ResponseRole;
   indicators: string[];
   annotatedImage?: string;
   privacyRegions?: PrivacyRegion[];
@@ -42,21 +45,58 @@ interface Signal {
   indicators: string[];
 }
 
+function mergePrivacyRegions(...regionGroups: Array<PrivacyRegion[] | undefined>) {
+  const regions = regionGroups.flatMap(group => group ?? []);
+  return regions.filter((region, index) => {
+    const centerX = region.left + region.width / 2;
+    const centerY = region.top + region.height / 2;
+    return !regions.slice(0, index).some(previous => {
+      const previousCenterX = previous.left + previous.width / 2;
+      const previousCenterY = previous.top + previous.height / 2;
+      return (
+        previous.label === region.label &&
+        Math.abs(previousCenterX - centerX) < 7 &&
+        Math.abs(previousCenterY - centerY) < 7
+      );
+    });
+  });
+}
+
 interface FusionResult {
   type: string;
   service: ServiceType;
   score: number;
   indicators: string[];
   services: ServiceType[];
+  responsePlan: ResponseRole[];
+  priorityRole: ResponseRole;
   isFalseReport: boolean;
   falseReportReason?: string;
 }
 
-const signalWeights: Record<Signal['source'], number> = {
+const baseSignalWeights: Record<Signal['source'], number> = {
   text: 0.25,
-  nlp: 0.3,
+  nlp: 0.5,
   vision: 0.45
 };
+
+const invisibleEmergencyPattern =
+  /(gas leak|gas odor|kebocoran gas|gas bocor|bau gas|carbon monoxide|karbon monoksida|hazmat|bau kimia|asap kimia|chemical exposure|paparan kimia|poisoning|keracunan|overdose|nyeri dada|dada tertindih|heart attack|serangan jantung|cardiac|stroke|wajah mencong|bicara pelo|slurred speech|face drooping|sesak napas|sulit bernapas|difficulty breathing|not breathing|tidak bernapas|internal bleeding|pendarahan dalam|cedera dalam|internal injury|concussion|gegar otak|whiplash|nyeri perut hebat|severe abdominal pain)/i;
+
+function isInvisibleEmergencySignal(signal: Signal, text: string) {
+  return invisibleEmergencyPattern.test(`${signal.type} ${signal.indicators.join(' ')} ${text}`);
+}
+
+function getSignalWeight(signal: Signal, context: { hasPhoto: boolean; text: string }) {
+  if (signal.source === 'nlp') {
+    if (isInvisibleEmergencySignal(signal, context.text)) return context.hasPhoto ? 0.72 : 0.9;
+    return context.hasPhoto ? 0.28 : 0.7;
+  }
+
+  if (signal.source === 'text') return context.hasPhoto ? 0.18 : 0.42;
+  if (signal.source === 'vision') return context.hasPhoto ? 0.58 : 0;
+  return baseSignalWeights[signal.source];
+}
 
 const rules: Array<{
   service: ServiceType;
@@ -101,6 +141,14 @@ const rules: Array<{
     keywords: ['explosion', 'ledakan', 'gas leak', 'kebocoran gas', 'trapped in fire', 'terjebak api']
   },
   {
+    service: 'fire', type: 'Gas Leak / Hazmat Emergency', score: 9,
+    indicator: 'Gas leak or hazardous material exposure reported',
+    keywords: [
+      'kebocoran gas', 'gas bocor', 'bau gas', 'gas menyengat', 'gas leak', 'gas odor',
+      'carbon monoxide', 'karbon monoksida', 'hazmat', 'bau kimia', 'asap kimia'
+    ]
+  },
+  {
     service: 'fire', type: 'Fire Emergency', score: 8,
     indicator: 'Active structural fire detected',
     keywords: ['building fire', 'house fire', 'wildfire', 'kebakaran gedung', 'kebakaran rumah', 'kebakaran hutan', 'api menyebar']
@@ -142,13 +190,25 @@ const rules: Array<{
     ]
   },
   {
-    service: 'fire', type: 'Animal Rescue', score: 6,
-    indicator: 'Dangerous animal or rescue scenario detected',
+    service: 'police', type: 'Police Ranger - Dangerous Animal', score: 8,
+    indicator: 'Large dangerous animal requires police-ranger response',
+    keywords: [
+      'large dangerous animal', 'big wild animal', 'wild animal attack', 'large predator',
+      'buaya', 'crocodile', 'harimau', 'tiger', 'beruang', 'bear', 'lion', 'singa',
+      'serigala', 'wolf', 'macan', 'leopard', 'panther', 'komodo', 'hewan buas besar',
+      'hewan liar besar', 'predator besar'
+    ]
+  },
+  {
+    service: 'fire', type: 'Firefighter - Animal Rescue', score: 6,
+    indicator: 'Small dangerous animal or animal rescue requires firefighter animal rescue',
     keywords: [
       'animal rescue', 'animal_rescue', 'animal-rescue', 'animal trapped', 'animal stuck',
-      'killer', 'killers', 'attack', 'attacking', 'predator', 'wild animal', 'animal attack', 'serigala',
-      'buaya', 'harimau', 'beruang', 'lion', 'tiger', 'snake', 'ular', 'hewan buas', 'hewan liar', 'dikejar', 'diteror',
-      'cat stuck in tree', 'cat rescue', 'dog rescue', 'pet rescue', 'hewan terjebak', 'hewan tersangkut', 'anjing terjebak', 'kucing terjebak'
+      'snake', 'ular', 'ular masuk rumah', 'ular berbisa', 'cobra', 'kobra', 'python', 'piton',
+      'civet', 'musang', 'anjing galak', 'aggressive dog', 'rabid dog', 'biawak', 'monitor lizard',
+      'tawon', 'lebah', 'sarang tawon', 'wasp nest', 'hewan kecil berbahaya',
+      'small dangerous animal', 'cat stuck in tree', 'cat rescue', 'dog rescue', 'pet rescue',
+      'hewan terjebak', 'hewan tersangkut', 'anjing terjebak', 'kucing terjebak'
     ]
   },
   {
@@ -160,6 +220,30 @@ const rules: Array<{
     service: 'ambulance', type: 'Medical Emergency', score: 10,
     indicator: 'Life-threatening medical condition detected',
     keywords: ['not breathing', 'cardiac arrest', 'heart attack', 'stroke', 'tidak bernapas', 'henti jantung', 'serangan jantung']
+  },
+  {
+    service: 'ambulance', type: 'Cardiac / Stroke Emergency', score: 9,
+    indicator: 'Heart attack or stroke symptoms reported',
+    keywords: [
+      'nyeri dada', 'dada tertindih', 'keringat dingin', 'menjalar ke lengan',
+      'wajah mencong', 'bicara pelo', 'lemah sebelah', 'slurred speech', 'face drooping'
+    ]
+  },
+  {
+    service: 'ambulance', type: 'Respiratory Distress Emergency', score: 9,
+    indicator: 'Respiratory distress reported',
+    keywords: [
+      'sesak napas', 'sulit bernapas', 'tidak bisa bernapas', 'napas berhenti',
+      'bibir membiru', 'bibir biru', 'asma parah', 'difficulty breathing'
+    ]
+  },
+  {
+    service: 'ambulance', type: 'Poisoning / Chemical Exposure', score: 8,
+    indicator: 'Poisoning or chemical exposure reported',
+    keywords: [
+      'keracunan', 'tertelan obat', 'overdose', 'poisoning', 'paparan kimia',
+      'chemical exposure', 'terhirup racun', 'menghirup asap kimia', 'muntah hebat'
+    ]
   },
   {
     service: 'ambulance', type: 'Medical Emergency', score: 8,
@@ -177,7 +261,7 @@ const rules: Array<{
     keywords: ['injury', 'wound', 'pain', 'blood', 'cedera', 'luka', 'sakit', 'darah', 'pusing', 'demam', 'memar', 'kaki memar']
   },
   {
-    service: 'fire', type: 'Animal Rescue', score: 2,
+    service: 'fire', type: 'Firefighter - Animal Rescue', score: 2,
     indicator: 'Non-critical animal rescue requested',
     keywords: [
       'animal rescue', 'animal_rescue', 'animal-rescue', 'animal trapped', 'animal stuck',
@@ -207,11 +291,26 @@ const animalKeywords = [
   'animal rescue', 'animal_rescue', 'animal-rescue', 'animal trapped', 'animal stuck',
   'cat stuck in tree', 'cat rescue', 'dog rescue', 'pet rescue', 'hewan terjebak', 'hewan tersangkut',
   'kucing terjebak', 'anjing terjebak', 'hewan liar', 'hewan buas', 'wild animal', 'animal attack',
-  'serigala', 'buaya', 'harimau', 'beruang', 'lion', 'tiger', 'snake', 'ular', 'predator'
+  'serigala', 'buaya', 'harimau', 'beruang', 'lion', 'tiger', 'snake', 'ular', 'predator',
+  'musang', 'civet', 'anjing galak', 'aggressive dog', 'cobra', 'kobra', 'biawak', 'sarang tawon'
 ];
+
+const largeDangerousAnimalPattern =
+  /(buaya|crocodile|harimau|tiger|beruang|bear|lion|singa|serigala|wolf|macan|leopard|panther|komodo|large predator|big wild animal|hewan buas besar|hewan liar besar|predator besar)/i;
+
+const smallDangerousAnimalPattern =
+  /(snake|ular|cobra|kobra|python|piton|musang|civet|anjing galak|aggressive dog|rabid dog|biawak|monitor lizard|tawon|lebah|sarang tawon|wasp nest|hewan kecil berbahaya)/i;
 
 function hasAnimalContext(value: string) {
   return includesAny(value, animalKeywords);
+}
+
+function hasLargeDangerousAnimalContext(value: string) {
+  return largeDangerousAnimalPattern.test(value);
+}
+
+function hasSmallDangerousAnimalContext(value: string) {
+  return smallDangerousAnimalPattern.test(value);
 }
 
 function severityFromScore(score: number): AIResult['severity'] {
@@ -219,6 +318,71 @@ function severityFromScore(score: number): AIResult['severity'] {
   if (score >= 6) return 'High';
   if (score >= 4) return 'Medium';
   return 'Low';
+}
+
+function getDisasterResponsePlan(type: string, score: number): ResponseRole[] {
+  const lower = type.toLowerCase();
+  if (/tsunami|earthquake|volcanic eruption|severe storm|flood|landslide/.test(lower)) {
+    return score >= 9 ? ['disaster-response'] : ['fire'];
+  }
+  return [];
+}
+
+function getCrisisResponsePlan(type: string, primary: ServiceType, score: number, text: string): ResponseRole[] {
+  const lower = `${type} ${text}`.toLowerCase();
+  const plan: ResponseRole[] = [];
+  const multiAgency = /(train accident|train crash|railway accident|kecelakaan kereta|plane crash|pesawat jatuh|mass casualty|banyak korban|building collapse|gedung runtuh|bus accident|truck accident|kecelakaan besar|accident besar)/i.test(lower);
+  const hostileThreat = /(terror|teroris|terrorist|active shooter|hostage|armed threat|penembakan|sandera|bom|bomb|serangan bersenjata)/i.test(lower);
+  const entrapment = /(stuck|terjepit|terperangkap|trapped|korban terjepit|terjebak di kendaraan|pinned|frozen inside)/i.test(lower);
+  const medicalNeed = /(injury|injured|hurt|bleeding|pendarahan|luka|patah|unconscious|unresponsive|sesak napas|not breathing|cardiac arrest|heart attack|stroke)/i.test(lower);
+  const gasOrHazmat = /(gas leak|gas odor|kebocoran gas|gas bocor|bau gas|carbon monoxide|karbon monoksida|hazmat|bau kimia|asap kimia|chemical exposure|paparan kimia|poisoning|keracunan)/i.test(lower);
+
+  if (/tsunami|earthquake|volcanic eruption|severe storm|flood|landslide/.test(lower)) {
+    return score >= 9 ? ['disaster-response'] : ['fire'];
+  }
+
+  if (gasOrHazmat) {
+    plan.push('fire');
+    plan.push('ambulance');
+    if (score >= 9 || /explosion|ledakan|bom|bomb/.test(lower)) plan.push('police');
+    return [...new Set(plan)];
+  }
+
+  if (hostileThreat) {
+    plan.push('police');
+    if (score >= 6 || medicalNeed) plan.push('ambulance');
+    if (score >= 8) plan.push('fire');
+    return [...new Set(plan)];
+  }
+
+  if (multiAgency) {
+    plan.push('ambulance');
+    plan.push('fire');
+    plan.push('police');
+    return [...new Set(plan)];
+  }
+
+  if (primary === 'fire') {
+    plan.push('fire');
+    if (entrapment || medicalNeed || score >= 8) plan.push('ambulance');
+    if (/explosion|gas leak|ledakan|kebocoran gas/.test(lower)) plan.push('police');
+    return [...new Set(plan)];
+  }
+
+  if (primary === 'police') {
+    plan.push('police');
+    if (medicalNeed || score >= 7) plan.push('ambulance');
+    return [...new Set(plan)];
+  }
+
+  if (primary === 'ambulance') {
+    plan.push('ambulance');
+    if (score >= 8 && /fire|smoke|kebakaran|asap/.test(lower)) plan.push('fire');
+    if (hostileThreat) plan.unshift('police');
+    return [...new Set(plan)];
+  }
+
+  return [primary];
 }
 
 function extractImageAssessment(value: unknown): ImageAssessment | null {
@@ -243,17 +407,22 @@ function extractImageAssessment(value: unknown): ImageAssessment | null {
   }).outputs?.[0];
 
   if (!output || typeof output.incident_type !== 'string') return null;
+  const incidentType = output.incident_type.toLowerCase();
+  const description = typeof output.description === 'string' ? output.description : undefined;
+  const detectedPrivacyRegions = extractPrivacyRegions(output);
 
   return {
-    incidentType: output.incident_type.toLowerCase(),
+    incidentType,
     severityScore: typeof output.severity_score === 'number' ? output.severity_score : 0,
-    description: typeof output.description === 'string' ? output.description : undefined,
+    description,
     confidence: typeof output.confidence === 'number' ? output.confidence : undefined,
     annotatedImage:
       typeof output.annotated_image?.value === 'string'
         ? `data:image/jpeg;base64,${output.annotated_image.value}`
         : undefined,
-    privacyRegions: extractPrivacyRegions(output)
+    privacyRegions: detectedPrivacyRegions?.length
+      ? detectedPrivacyRegions
+      : inferPrivacyRegionsFromAssessment(incidentType, description)
   };
 }
 
@@ -262,8 +431,79 @@ function normalizeRegionLabel(value: string) {
   if (/(face|person|head|human|muka|wajah)/i.test(label)) return 'face';
   if (/(license plate|plate|plat|vehicle plate|nomor polisi|nopol|polisi kendaraan)/i.test(label)) return 'license plate';
   if (/(blood|darah|bleeding|luka)/i.test(label)) return 'blood';
+  if (/(gore|graphic|gruesome|corpse|body part|severed|mutilated|fatal injury|mayat|jenazah|potongan tubuh|sadis|mengerikan|luka parah|organ)/i.test(label)) return 'graphic content';
+  if (/(weapon|knife|gun|firearm|senjata|pisau|pistol)/i.test(label)) return 'dangerous object';
   if (/(accident|collision|crash|wreck|damaged vehicle|kendaraan rusak|kecelakaan)/i.test(label)) return 'accident';
   return label;
+}
+
+function isSensitiveRegionLabel(label: string) {
+  return /face|license plate|blood|graphic content|dangerous object|accident/i.test(label);
+}
+
+function inferPrivacyRegionsFromAssessment(
+  incidentType: string,
+  description?: string
+): PrivacyRegion[] | undefined {
+  const text = `${incidentType} ${description ?? ''}`.toLowerCase();
+
+  if (/(blood|darah|bleeding|trauma|physical trauma|severe injury|luka|gore|graphic|gruesome|mutilated|fatal injury|sadis|luka parah)/i.test(text)) {
+    return [
+      {
+        label: 'graphic content',
+        left: 47,
+        top: 30,
+        width: 38,
+        height: 34,
+        confidence: 0.55,
+        normalized: true
+      },
+      {
+        label: 'blood',
+        left: 24,
+        top: 3,
+        width: 30,
+        height: 16,
+        confidence: 0.5,
+        normalized: true
+      },
+      {
+        label: 'blood',
+        left: 13,
+        top: 58,
+        width: 20,
+        height: 18,
+        confidence: 0.45,
+        normalized: true
+      }
+    ];
+  }
+
+  if (/(face|muka|wajah|person|human|head)/i.test(text)) {
+    return [{
+      label: 'face',
+      left: 38,
+      top: 12,
+      width: 24,
+      height: 24,
+      confidence: 0.45,
+      normalized: true
+    }];
+  }
+
+  if (/(license plate|plate|plat|nomor polisi|nopol|vehicle plate)/i.test(text)) {
+    return [{
+      label: 'license plate',
+      left: 34,
+      top: 58,
+      width: 32,
+      height: 12,
+      confidence: 0.45,
+      normalized: true
+    }];
+  }
+
+  return undefined;
 }
 
 function extractPrivacyRegions(output: {
@@ -300,14 +540,16 @@ function extractPrivacyRegions(output: {
 
     const label = typeof typed.class === 'string' ? normalizeRegionLabel(typed.class) : '';
     const confidence = typeof typed.confidence === 'number' ? typed.confidence : undefined;
+    if (label && !isSensitiveRegionLabel(label)) return [];
+    if (typeof confidence === 'number' && confidence < 0.35) return [];
 
     if (typeof typed.x === 'number' && typeof typed.y === 'number' && typeof typed.width === 'number' && typeof typed.height === 'number') {
       return [{
         label: label || 'sensitive object',
         left: Math.max(0, typed.x - typed.width / 2),
         top: Math.max(0, typed.y - typed.height / 2),
-        width: Math.max(0, typed.width),
-        height: Math.max(0, typed.height),
+        width: Math.max(6, typed.width),
+        height: Math.max(6, typed.height),
         confidence,
         normalized: false
       } as PrivacyRegion];
@@ -323,8 +565,8 @@ function extractPrivacyRegions(output: {
         label: label || 'sensitive object',
         left: Math.max(0, typed.left),
         top: Math.max(0, typed.top),
-        width: Math.max(0, typed.right - typed.left),
-        height: Math.max(0, typed.bottom - typed.top),
+        width: Math.max(6, typed.right - typed.left),
+        height: Math.max(6, typed.bottom - typed.top),
         confidence,
         normalized: false
       } as PrivacyRegion];
@@ -341,7 +583,9 @@ function classifyText(text: string): Classification {
   const animalMatch = hasAnimalContext(lower);
   const matches = rules.filter(rule => includesAny(lower, rule.keywords));
   const strongest = animalMatch
-    ? matches.find(rule => rule.service === 'fire' && /animal rescue|rescue assistance/i.test(rule.type)) ?? matches.sort((a, b) => b.score - a.score)[0]
+    ? hasLargeDangerousAnimalContext(lower) && !hasSmallDangerousAnimalContext(lower)
+      ? matches.find(rule => rule.service === 'police' && /police ranger/i.test(rule.type)) ?? matches.sort((a, b) => b.score - a.score)[0]
+      : matches.find(rule => rule.service === 'fire' && /animal rescue|rescue assistance/i.test(rule.type)) ?? matches.sort((a, b) => b.score - a.score)[0]
     : matches.sort((a, b) => b.score - a.score)[0];
   let score = strongest?.score ?? 2;
   const indicators = [...new Set(matches.map(rule => rule.indicator))];
@@ -396,21 +640,30 @@ function classifyImage(assessment: ImageAssessment): Classification | null {
   const imageText = `${normalizedIncident} ${normalizedDescription}`;
   const animalMatch = hasAnimalContext(imageText);
   const match = animalMatch
-    ? rules.find(rule => rule.service === 'fire' && /Animal Rescue|Rescue Assistance/i.test(rule.type))
+    ? hasLargeDangerousAnimalContext(imageText) && !hasSmallDangerousAnimalContext(imageText)
+      ? rules.find(rule => rule.service === 'police' && /Police Ranger/i.test(rule.type))
+      : rules.find(rule => rule.service === 'fire' && /Animal Rescue|Rescue Assistance/i.test(rule.type))
       ?? rules.find(rule => includesAny(imageText, rule.keywords))
     : rules.find(rule => includesAny(imageText, rule.keywords));
   if (!match || assessment.incidentType === 'none') return null;
+
+  const disasterMatch = rules.find(rule =>
+    rule.type !== 'Fire Emergency' &&
+    includesAny(imageText, rule.keywords) &&
+    /tsunami|volcanic eruption|earthquake|severe storm|landslide|flood/i.test(rule.type)
+  );
+  const resolvedMatch = disasterMatch ?? match;
 
   const confidence = assessment.confidence ?? 0;
   const strongEnough = assessment.severityScore >= 4 || confidence >= 0.6;
 
   // Neutral photos should not invent an emergency.
-  if (!strongEnough && match.service === 'ambulance') return null;
+  if (!strongEnough && resolvedMatch.service === 'ambulance') return null;
 
   return {
-    type: match.type,
-    service: match.service,
-    score: Math.max(1, Math.min(10, Math.max(match.score, assessment.severityScore || 0))),
+    type: resolvedMatch.type,
+    service: resolvedMatch.service,
+    score: Math.max(1, Math.min(10, Math.max(resolvedMatch.score, assessment.severityScore || 0))),
     indicators: [
       `Image assessment detected: ${assessment.incidentType}`,
       ...(assessment.description ? [`Visual assessment: ${assessment.description}`] : [])
@@ -425,8 +678,10 @@ function detectRequiredServices(
 ): ServiceType[] {
   const lower = text.toLowerCase();
   const services = new Set<ServiceType>([primary]);
-  const largeAnimalIncident = /(wild animal|animal attack|hewan buas|hewan liar|buaya|harimau|beruang|lion|tiger|serigala|snake|ular|predator|hewan besar)/i;
-  const injurySignal = /(injury|injured|hurt|fallen|fall|jatuh|cedera|luka|patah|darah|bleeding|pendarahan|korban|victim|unconscious|tidak sadar|unresponsive|sesak napas|difficulty breathing)/i;
+  const largeAnimalIncident = largeDangerousAnimalPattern;
+  const smallAnimalIncident = smallDangerousAnimalPattern;
+  const medicalEmergencySignal = /(not breathing|cardiac arrest|heart attack|stroke|unconscious|unresponsive|heavy bleeding|difficulty breathing|tidak bernapas|henti jantung|serangan jantung|tidak sadar|sesak napas|pendarahan hebat)/i;
+  const gasOrHazmatSignal = /(gas leak|gas odor|kebocoran gas|gas bocor|bau gas|carbon monoxide|karbon monoksida|hazmat|bau kimia|asap kimia|chemical exposure|paparan kimia|poisoning|keracunan)/i;
   const multiAgencyIncident =
     /(train accident|train crash|railway accident|kecelakaan kereta|kereta anjlok|plane crash|pesawat jatuh|mass casualty|banyak korban|building collapse|gedung runtuh|tsunami|volcanic eruption|volcano eruption|gunung meletus|erupsi gunung|earthquake|gempa|typhoon|hurricane|cyclone|tornado|topan|puting beliung|landslide|longsor|flash flood|flood|banjir)/i;
 
@@ -436,15 +691,24 @@ function detectRequiredServices(
     services.add('police');
   }
 
-  if (primary === 'fire' && severityScore >= 8 && injurySignal.test(lower)) {
+  if (gasOrHazmatSignal.test(lower)) {
+    services.add('fire');
+    services.add('ambulance');
+  }
+
+  if (primary === 'fire' && severityScore >= 8 && medicalEmergencySignal.test(lower)) {
     services.add('ambulance');
   }
 
   if (largeAnimalIncident.test(lower)) {
     services.add('police');
-    if (injurySignal.test(lower)) {
+    if (medicalEmergencySignal.test(lower)) {
       services.add('ambulance');
     }
+  }
+
+  if (smallAnimalIncident.test(lower)) {
+    services.add('fire');
   }
 
   rules.forEach(rule => {
@@ -454,13 +718,20 @@ function detectRequiredServices(
   return [...services];
 }
 
-function fuseSignals(signals: Signal[], text: string, imageAnalysisFailed: boolean): FusionResult {
+function fuseSignals(signals: Signal[], text: string, imageAnalysisFailed: boolean, hasPhoto: boolean): FusionResult {
   const usableSignals = signals.filter(signal => signal.score > 0);
-  const totalWeight = usableSignals.reduce((sum, signal) => sum + signalWeights[signal.source], 0) || 1;
+  const fusionContext = { hasPhoto, text };
+  const totalWeight = usableSignals.reduce((sum, signal) => sum + getSignalWeight(signal, fusionContext), 0) || 1;
   const hasTextInput = text.trim().length > 0;
+  const hasInvisibleEmergency = usableSignals.some(signal => signal.source !== 'vision' && isInvisibleEmergencySignal(signal, text));
+  const visionSignals = usableSignals.filter(signal => signal.source === 'vision');
+  const strongestVision = [...visionSignals].sort((a, b) => b.score - a.score)[0];
+  const strongestVisionIsNaturalDisaster = Boolean(
+    strongestVision && /tsunami|volcanic eruption|earthquake|severe storm|landslide|flood/i.test(strongestVision.type)
+  );
 
   const serviceWeights = usableSignals.reduce((acc, signal) => {
-    acc[signal.service] = (acc[signal.service] ?? 0) + signal.score * signalWeights[signal.source];
+    acc[signal.service] = (acc[signal.service] ?? 0) + signal.score * getSignalWeight(signal, fusionContext);
     return acc;
   }, {} as Record<ServiceType, number>);
 
@@ -468,23 +739,42 @@ function fuseSignals(signals: Signal[], text: string, imageAnalysisFailed: boole
   const serviceSignals = usableSignals.filter(signal => signal.service === winningService);
   const strongestSignal = [...serviceSignals].sort((a, b) => b.score - a.score)[0] ?? [...usableSignals].sort((a, b) => b.score - a.score)[0];
   const weightedScore = usableSignals.reduce(
-    (sum, signal) => sum + signal.score * signalWeights[signal.source],
+    (sum, signal) => sum + signal.score * getSignalWeight(signal, fusionContext),
     0
   ) / totalWeight;
-  const hasSpecificSignal = signals.some(signal => signal.type !== 'General Emergency' && signal.source !== 'vision') ||
+  const hasSpecificSignal = hasInvisibleEmergency ||
+    signals.some(signal => signal.type !== 'General Emergency' && signal.source !== 'vision') ||
     signals.some(signal => signal.source === 'vision' && signal.score >= 4);
   const isFalseReport = !hasSpecificSignal && signals.every(signal => signal.score <= 2);
 
   const hasStrongTextSignal = signals.some(signal => signal.source !== 'vision' && signal.score >= 5);
   const hasStrongVisionSignal = signals.some(signal => signal.source === 'vision' && signal.score >= 6);
 
+  if (strongestVisionIsNaturalDisaster && strongestVision) {
+    const responsePlan = getDisasterResponsePlan(strongestVision.type, strongestVision.score);
+    return {
+      type: strongestVision.type,
+      service: strongestVision.service,
+      score: Math.max(1, Math.min(10, Math.round(strongestVision.score))),
+      indicators: [
+        ...strongestVision.indicators,
+        'Vision detected a natural-disaster event and was allowed to dominate fusion',
+        ...(imageAnalysisFailed ? ['Photo uploaded, but image assessment was unavailable'] : [])
+      ],
+      services: [...new Set([strongestVision.service])],
+      responsePlan,
+      priorityRole: responsePlan[0] ?? strongestVision.service,
+      isFalseReport: false,
+      falseReportReason: undefined
+    };
+  }
+
   // If the report is image-only, keep the vision result authoritative.
   if (!hasTextInput) {
-    const visionSignals = signals.filter(signal => signal.source === 'vision');
-    const strongestVision = [...visionSignals].sort((a, b) => b.score - a.score)[0];
-
     if (strongestVision) {
-      const services = detectRequiredServices(text, strongestVision.service, strongestVision.score);
+      const responsePlan = /tsunami|volcanic eruption|earthquake|severe storm|landslide|flood/i.test(strongestVision.type)
+        ? getDisasterResponsePlan(strongestVision.type, strongestVision.score)
+        : getCrisisResponsePlan(strongestVision.type, strongestVision.service, strongestVision.score, text);
       return {
         type: strongestVision.type,
         service: strongestVision.service,
@@ -494,7 +784,9 @@ function fuseSignals(signals: Signal[], text: string, imageAnalysisFailed: boole
           'Image-only report resolved directly from vision analysis',
           ...(imageAnalysisFailed ? ['Photo uploaded, but image assessment was unavailable'] : [])
         ],
-        services,
+        services: [...new Set([strongestVision.service, ...detectRequiredServices(text, strongestVision.service, strongestVision.score)])],
+        responsePlan,
+        priorityRole: responsePlan[0] ?? strongestVision.service,
         isFalseReport: false,
         falseReportReason: undefined
       };
@@ -502,9 +794,12 @@ function fuseSignals(signals: Signal[], text: string, imageAnalysisFailed: boole
   }
 
   // If only vision is weakly suggesting medical, keep it conservative.
-  if (!hasStrongTextSignal && !hasStrongVisionSignal) {
-    const safeService = signals.find(signal => signal.source !== 'vision' && signal.score >= 3)?.service ?? 'ambulance';
+  if (!hasInvisibleEmergency && !hasStrongTextSignal && !hasStrongVisionSignal) {
+    const safeService = signals.find(signal => signal.source !== 'vision' && signal.score >= 3)?.service ?? (strongestVision?.service ?? 'fire');
     const safeType = signals.find(signal => signal.source !== 'vision' && signal.score >= 3)?.type ?? 'General Emergency';
+    const responsePlan = /tsunami|volcanic eruption|earthquake|severe storm|landslide|flood/i.test(safeType)
+      ? getDisasterResponsePlan(safeType, Math.max(1, Math.min(10, Math.round(weightedScore))))
+      : getCrisisResponsePlan(safeType, safeService, Math.max(1, Math.min(10, Math.round(weightedScore))), text);
     return {
       type: safeType,
       service: safeService,
@@ -513,7 +808,11 @@ function fuseSignals(signals: Signal[], text: string, imageAnalysisFailed: boole
         'Low-confidence image signals were suppressed to avoid false positives',
         ...(imageAnalysisFailed ? ['Photo uploaded, but image assessment was unavailable'] : [])
       ],
-      services: detectRequiredServices(text, safeService, Math.max(1, Math.min(10, Math.round(weightedScore)))),
+      services: /tsunami|volcanic eruption|earthquake|severe storm|landslide|flood/i.test(safeType)
+        ? [safeService]
+        : detectRequiredServices(text, safeService, Math.max(1, Math.min(10, Math.round(weightedScore)))),
+      responsePlan,
+      priorityRole: responsePlan[0] ?? safeService,
       isFalseReport,
       falseReportReason: isFalseReport ? 'No clear emergency evidence was detected in the photo or text.' : undefined
     };
@@ -533,14 +832,17 @@ function fuseSignals(signals: Signal[], text: string, imageAnalysisFailed: boole
     ...(serviceLabels.length > 1
       ? [`Signals were mixed across ${serviceLabels.join(', ')}; fused on ${winningService}`]
       : [`Text, NLP, and vision aligned on ${winningService}`]),
-    ...(strongestSignal?.source === 'vision' && strongestSignal.service === 'ambulance' && strongestSignal.score < 6
-      ? ['Medical signal from vision was treated as low confidence and not allowed to override the text']
+    ...(hasInvisibleEmergency
+      ? ['Text/NLP describes a non-visible emergency; responder verification required on acceptance']
       : []),
     ...(imageAnalysisFailed ? ['Photo uploaded, but image assessment was unavailable'] : [])
   ];
 
   const services = detectRequiredServices(text, winningService, finalScore);
   for (const service of serviceLabels) services.push(service);
+  const responsePlan = /tsunami|volcanic eruption|earthquake|severe storm|landslide|flood/i.test(strongestSignal?.type ?? '')
+    ? getDisasterResponsePlan(strongestSignal?.type ?? 'General Emergency', finalScore)
+    : getCrisisResponsePlan(strongestSignal?.type ?? 'General Emergency', winningService, finalScore, text);
 
   return {
     type: strongestSignal?.type ?? 'General Emergency',
@@ -548,6 +850,8 @@ function fuseSignals(signals: Signal[], text: string, imageAnalysisFailed: boole
     score: finalScore,
     indicators: [...new Set(indicators)],
     services: [...new Set(services)],
+    responsePlan,
+    priorityRole: responsePlan[0] ?? winningService,
     isFalseReport,
     falseReportReason: isFalseReport ? 'No clear emergency evidence was detected in the photo or text.' : undefined
   };
@@ -565,6 +869,9 @@ export async function analyzeEmergency(
   let imageAnalysisFailed = false;
 
   if (photo) {
+    const localPrivacyRegions = await detectPrivacyRegionsFromPhoto(photo);
+    privacyRegions = mergePrivacyRegions(privacyRegions, localPrivacyRegions);
+
     const yoloDetections = await analyzeEmergencyWithYolo(photo);
     if (yoloDetections.length) {
       const yoloText = yoloDetections
@@ -583,13 +890,13 @@ export async function analyzeEmergency(
     }
 
     try {
-      const imageResult: unknown = await analyzeEmergencyImage(photo);
+      const imageResult: unknown = await analyzeEmergencyImage(photo, text);
       console.log('ROBOFLOW RESULT:', imageResult);
       const assessment = extractImageAssessment(imageResult);
       console.log('IMAGE ASSESSMENT:', assessment);
       if (assessment) {
         annotatedImage = assessment.annotatedImage;
-        privacyRegions = assessment.privacyRegions;
+        privacyRegions = mergePrivacyRegions(privacyRegions, assessment.privacyRegions);
         const roboflowClassification = classifyImage(assessment);
         if (
           roboflowClassification &&
@@ -632,12 +939,18 @@ export async function analyzeEmergency(
       : [])
   ];
 
-  const fused = fuseSignals(signals, text, imageAnalysisFailed);
+  const fused = fuseSignals(signals, text, imageAnalysisFailed, Boolean(photo));
+  const fusedServices = [...new Set([
+    ...fused.services,
+    ...(nlpClassification?.services ?? [])
+  ])];
 
   return {
     type: fused.type,
     service: fused.service,
-    services: fused.services,
+    services: fusedServices,
+    responsePlan: fused.responsePlan,
+    priorityRole: fused.priorityRole,
     severityScore: fused.score,
     severity: severityFromScore(fused.score),
     indicators: fused.indicators,

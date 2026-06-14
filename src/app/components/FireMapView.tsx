@@ -1,14 +1,16 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { getReportServices, type StoredEmergencyReport } from '../types/emergency';
+import { getReportServices, type ServiceType, type StoredEmergencyReport } from '../types/emergency';
 import type { PublicCctvCamera } from '../config/cctv';
+import type { LiveGpsLocation } from '../services/liveGps';
 
 interface FireMapViewProps {
   userLocation: { lat: number; lng: number };
   reports: StoredEmergencyReport[];
   cameras: PublicCctvCamera[];
   onCameraSelect: (camera: PublicCctvCamera) => void;
+  liveGpsByService: Partial<Record<ServiceType, LiveGpsLocation | null>>;
 }
 
 const serviceMarkerConfig = {
@@ -16,6 +18,12 @@ const serviceMarkerConfig = {
   fire: { symbol: '🔥', label: 'Fire', background: '#ea580c' },
   police: { symbol: '🦹', label: 'Crime', background: '#4f46e5' }
 };
+
+function getPrimaryService(services: ServiceType[]): ServiceType {
+  if (services.includes('fire')) return 'fire';
+  if (services.includes('police')) return 'police';
+  return 'ambulance';
+}
 
 function createServiceMarkerElement(service: keyof typeof serviceMarkerConfig) {
   const config = serviceMarkerConfig[service];
@@ -58,10 +66,7 @@ function createAreaPolygon(lng: number, lat: number, radiusMeters: number, seed:
 
   for (let i = 0; i <= steps; i += 1) {
     const angle = (i / steps) * 2 * Math.PI;
-    const wobble =
-      0.78 +
-      seededNoise(seed, i) * 0.24 +
-      Math.sin(angle * 3 + seededNoise(seed, 5) * Math.PI) * 0.06;
+    const wobble = 0.78 + seededNoise(seed, i) * 0.24 + Math.sin(angle * 3 + seededNoise(seed, 5) * Math.PI) * 0.06;
     const xScale = 1 + (stretch - 1) * Math.cos(angle - rotation);
     const distance = (radiusMeters * wobble * xScale) / earthRadiusMeters;
     const bearing = angle + rotation * 0.12;
@@ -79,55 +84,40 @@ function createAreaPolygon(lng: number, lat: number, radiusMeters: number, seed:
   return coordinates;
 }
 
-export function FireMapView({
-  userLocation,
-  reports,
-  cameras,
-  onCameraSelect,
-}: FireMapViewProps) {
+export function FireMapView({ userLocation, reports, cameras, onCameraSelect, liveGpsByService }: FireMapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
+  const [mapReady, setMapReady] = useState(false);
   const tomtomApiKey = import.meta.env.VITE_TOMTOM_API_KEY as string | undefined;
+  const liveServiceLocations = useMemo(
+    () => (Object.values(liveGpsByService).filter(Boolean) as LiveGpsLocation[]),
+    [liveGpsByService]
+  );
 
   useEffect(() => {
     if (!mapContainer.current) return;
 
+    setMapReady(false);
+
     const map = new maplibregl.Map({
       container: mapContainer.current,
       style: {
-  version: 8,
-  sources: {
-    osm: {
-      type: 'raster',
-      tiles: [
-        'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
-      ],
-      tileSize: 256
-    }
-  },
-  layers: [
-    {
-      id: 'osm',
-      type: 'raster',
-      source: 'osm'
-    }
-  ]
-},
+        version: 8,
+        sources: {
+          osm: {
+            type: 'raster',
+            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+            tileSize: 256,
+            attribution: '&copy; OpenStreetMap contributors'
+          }
+        },
+        layers: [{ id: 'osm', type: 'raster', source: 'osm' }]
+      },
       center: [userLocation.lng, userLocation.lat],
       zoom: 10,
+      preserveDrawingBuffer: true,
     });
 
-    new maplibregl.Marker({ color: '#2563eb' })
-      .setLngLat([
-        userLocation.lng,
-        userLocation.lat,
-      ])
-      .setPopup(
-        new maplibregl.Popup().setText(
-          'Command Center Location'
-        )
-      )
-      .addTo(map);
-
+    const bounds = new maplibregl.LngLatBounds().extend([userLocation.lng, userLocation.lat]);
     const getDangerZones = (scale: number) => {
       if (scale >= 8) return [
         { level: 'Yellow Caution Perimeter', color: '#eab308', stroke: '#a16207', radiusMeters: 230 },
@@ -144,8 +134,7 @@ export function FireMapView({
         { level: 'Watch Zone', color: '#22c55e', stroke: '#15803d', radiusMeters: 70 }
       ];
     };
-    const bounds = new maplibregl.LngLatBounds()
-      .extend([userLocation.lng, userLocation.lat]);
+
     const reportPoints = reports.map((report, index) => {
       const fallbackOffset = ((index % 7) + 1) * 0.006;
       const coords = report.coords ?? {
@@ -157,13 +146,15 @@ export function FireMapView({
       return { report, coords, services, zones };
     });
 
-    map.on('load', () => {
+    const failSafe = window.setTimeout(() => setMapReady(true), 5000);
+
+    map.once('load', () => {
+      map.resize();
+
       if (tomtomApiKey) {
         map.addSource('traffic-flow', {
           type: 'raster',
-          tiles: [
-            `https://api.tomtom.com/traffic/map/4/tile/flow/absolute/{z}/{x}/{y}.png?key=${tomtomApiKey}`
-          ],
+          tiles: [`https://api.tomtom.com/traffic/map/4/tile/flow/absolute/{z}/{x}/{y}.png?key=${tomtomApiKey}`],
           tileSize: 256
         });
 
@@ -171,9 +162,7 @@ export function FireMapView({
           id: 'traffic-flow',
           type: 'raster',
           source: 'traffic-flow',
-          paint: {
-            'raster-opacity': 0.78
-          }
+          paint: { 'raster-opacity': 0.78 }
         });
       }
 
@@ -200,36 +189,33 @@ export function FireMapView({
         })))
       };
 
-      map.addSource('danger-zones', {
-        type: 'geojson',
-        data: dangerZones
-      });
-
+      map.addSource('danger-zones', { type: 'geojson', data: dangerZones });
       map.addLayer({
         id: 'danger-zone-fill',
         type: 'fill',
         source: 'danger-zones',
-        paint: {
-          'fill-color': ['get', 'color'],
-          'fill-opacity': 0.18
-        }
+        paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.18 }
       });
-
       map.addLayer({
         id: 'danger-zone-outline',
         type: 'line',
         source: 'danger-zones',
-        paint: {
-          'line-color': ['get', 'stroke'],
-          'line-width': 2.5,
-          'line-opacity': 0.78
-        }
+        paint: { 'line-color': ['get', 'stroke'], 'line-width': 2.5, 'line-opacity': 0.78 }
       });
+
+      if (liveServiceLocations.length) {
+        liveServiceLocations.forEach(location => {
+          new maplibregl.Marker({ element: createServiceMarkerElement(location.service) })
+            .setLngLat([location.lng, location.lat])
+            .setPopup(new maplibregl.Popup({ offset: 18 }).setText(`${location.service.toUpperCase()} ${location.unit} live GPS`))
+            .addTo(map);
+          bounds.extend([location.lng, location.lat]);
+        });
+      }
 
       map.on('click', 'danger-zone-fill', (event) => {
         const feature = event.features?.[0];
         if (!feature?.properties) return;
-
         const popup = document.createElement('div');
         const level = document.createElement('strong');
         level.textContent = feature.properties.level;
@@ -240,68 +226,70 @@ export function FireMapView({
         popup.append(`Radius: ${feature.properties.radiusMeters}m`, document.createElement('br'));
         popup.append(`Services: ${feature.properties.services}`);
 
-        new maplibregl.Popup({ offset: 14 })
-          .setLngLat(event.lngLat)
-          .setDOMContent(popup)
+        new maplibregl.Popup({ offset: 14 }).setLngLat(event.lngLat).setDOMContent(popup).addTo(map);
+      });
+
+      map.on('mouseenter', 'danger-zone-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', 'danger-zone-fill', () => { map.getCanvas().style.cursor = ''; });
+
+      reportPoints.forEach(({ report, coords, services, zones }) => {
+        const primaryService = getPrimaryService(services);
+        const primaryZone = zones[zones.length - 1];
+        const popup = document.createElement('div');
+        const title = document.createElement('strong');
+        title.textContent = report.emergencyType ?? 'Emergency Report';
+        popup.append(title, document.createElement('br'));
+        popup.append(report.location, document.createElement('br'));
+        popup.append(`Priority: ${report.injuryScale}/10`, document.createElement('br'));
+        popup.append(`Main zone: ${primaryZone.level} (${primaryZone.radiusMeters}m)`, document.createElement('br'));
+        if (zones.length > 1) popup.append(`Caution perimeter: ${zones[0].radiusMeters}m`, document.createElement('br'));
+        popup.append(`Services: ${services.join(', ')}`);
+
+        new maplibregl.Marker({ element: createServiceMarkerElement(primaryService) })
+          .setLngLat([coords.lng, coords.lat])
+          .setPopup(new maplibregl.Popup({ offset: 20 }).setDOMContent(popup))
           .addTo(map);
+        bounds.extend([coords.lng, coords.lat]);
       });
 
-      map.on('mouseenter', 'danger-zone-fill', () => {
-        map.getCanvas().style.cursor = 'pointer';
+      cameras.forEach(camera => {
+        const markerElement = document.createElement('button');
+        markerElement.type = 'button';
+        markerElement.title = `Open CCTV: ${camera.name}`;
+        markerElement.className = 'flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-emerald-500 text-sm shadow-lg';
+        markerElement.textContent = 'C';
+        markerElement.addEventListener('click', () => onCameraSelect(camera));
+
+        new maplibregl.Marker({ element: markerElement })
+          .setLngLat([camera.lng, camera.lat])
+          .setPopup(new maplibregl.Popup({ offset: 20 }).setText(`${camera.name} - OpenCCTV ${camera.feedType}`))
+          .addTo(map);
+        bounds.extend([camera.lng, camera.lat]);
       });
-      map.on('mouseleave', 'danger-zone-fill', () => {
-        map.getCanvas().style.cursor = '';
-      });
+
+      if (reports.length || cameras.length) map.fitBounds(bounds, { padding: 60, maxZoom: 14 });
+      setMapReady(true);
     });
 
-    reportPoints.forEach(({ report, coords, services, zones }) => {
-      const primaryService = services[0];
-      const primaryZone = zones[zones.length - 1];
-      const popup = document.createElement('div');
-      const title = document.createElement('strong');
-      title.textContent = report.emergencyType ?? 'Emergency Report';
-      popup.append(title, document.createElement('br'));
-      popup.append(report.location, document.createElement('br'));
-      popup.append(`Priority: ${report.injuryScale}/10`, document.createElement('br'));
-      popup.append(`Main zone: ${primaryZone.level} (${primaryZone.radiusMeters}m)`, document.createElement('br'));
-      if (zones.length > 1) {
-        popup.append(`Caution perimeter: ${zones[0].radiusMeters}m`, document.createElement('br'));
-      }
-      popup.append(`Services: ${services.join(', ')}`);
+    map.once('error', () => setMapReady(true));
 
-      new maplibregl.Marker({ element: createServiceMarkerElement(primaryService) })
-        .setLngLat([coords.lng, coords.lat])
-        .setPopup(
-          new maplibregl.Popup({ offset: 20 }).setDOMContent(popup)
-        )
-        .addTo(map);
-      bounds.extend([coords.lng, coords.lat]);
-    });
-
-    cameras.forEach(camera => {
-      const markerElement = document.createElement('button');
-      markerElement.type = 'button';
-      markerElement.title = `Open CCTV: ${camera.name}`;
-      markerElement.className = 'flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-emerald-500 text-sm shadow-lg';
-      markerElement.textContent = 'C';
-      markerElement.addEventListener('click', () => onCameraSelect(camera));
-
-      new maplibregl.Marker({ element: markerElement })
-        .setLngLat([camera.lng, camera.lat])
-        .setPopup(new maplibregl.Popup({ offset: 20 }).setText(`${camera.name} - OpenCCTV ${camera.feedType}`))
-        .addTo(map);
-      bounds.extend([camera.lng, camera.lat]);
-    });
-
-    if (reports.length || cameras.length) map.fitBounds(bounds, { padding: 60, maxZoom: 14 });
-
-    return () => map.remove();
-  }, [cameras, onCameraSelect, reports, tomtomApiKey, userLocation]);
+    return () => {
+      window.clearTimeout(failSafe);
+      map.remove();
+    };
+  }, [cameras, liveServiceLocations, onCameraSelect, reports, tomtomApiKey, userLocation]);
 
   return (
-  <div
-    ref={mapContainer}
-    className="w-full h-full"
-  />
-);
+    <div className="relative h-full w-full overflow-hidden bg-slate-900">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(34,197,94,0.18),transparent_28%),radial-gradient(circle_at_80%_30%,rgba(59,130,246,0.16),transparent_24%),linear-gradient(180deg,#0f172a_0%,#111827_100%)]" />
+      <div ref={mapContainer} className="h-full w-full" />
+      {!mapReady && (
+        <div className="absolute inset-0 flex items-center justify-center bg-slate-950/40 text-white">
+          <div className="rounded-lg bg-slate-900/90 px-4 py-3 text-sm font-medium shadow-lg">
+            Loading danger map...
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }

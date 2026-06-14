@@ -91,11 +91,32 @@ function routeApi() {
           const fromLng = url.searchParams.get('fromLng')
           const toLat = url.searchParams.get('toLat')
           const toLng = url.searchParams.get('toLng')
+          const apiKey = loadEnv(process.env.NODE_ENV || 'development', process.cwd(), '')
+            .VITE_TOMTOM_API_KEY
           if (![fromLat, fromLng, toLat, toLng].every(value => Number.isFinite(Number(value)))) {
             res.statusCode = 400
             res.end(JSON.stringify({ error: 'Valid origin and destination coordinates are required' }))
             return
           }
+          if (apiKey) {
+            const routeResponse = await fetch(
+              `https://api.tomtom.com/routing/1/calculateRoute/${encodeURIComponent(fromLat)},${encodeURIComponent(fromLng)}:${encodeURIComponent(toLat)},${encodeURIComponent(toLng)}/json?traffic=true&routeRepresentation=polyline&computeTravelTimeFor=all&key=${apiKey}`,
+            )
+            const result = await routeResponse.json()
+            const route = result.routes?.[0]
+            if (route) {
+              const points = route.legs?.[0]?.points ?? []
+              res.end(JSON.stringify({
+                distanceMeters: Number(route.summary?.lengthInMeters ?? 0),
+                durationSeconds: Number(route.summary?.travelTimeInSeconds ?? 0),
+                trafficDelaySeconds: Number(route.summary?.trafficDelayInSeconds ?? 0),
+                trafficLevel: route.summary?.trafficDelayInSeconds > 300 ? 'severe' : route.summary?.trafficDelayInSeconds > 180 ? 'heavy' : route.summary?.trafficDelayInSeconds > 60 ? 'moderate' : 'light',
+                coordinates: points.map((point: { longitude: number; latitude: number }) => [point.longitude, point.latitude]),
+              }))
+              return
+            }
+          }
+
           const routeResponse = await fetch(
             `https://router.project-osrm.org/route/v1/driving/${encodeURIComponent(fromLng)},${encodeURIComponent(fromLat)};${encodeURIComponent(toLng)},${encodeURIComponent(toLat)}?overview=full&geometries=geojson`,
           )
@@ -184,6 +205,13 @@ function nlpApiPlaceholder(apiKey) {
                     'police security emergency',
                     'natural disaster',
                     'lost property non emergency',
+                    'threatening incident',
+                    'dangerous animal threat',
+                    'drug related crime',
+                    'gas leak hazmat emergency',
+                    'heart attack or stroke emergency',
+                    'respiratory distress emergency',
+                    'poisoning or chemical exposure emergency',
                   ],
                   multi_label: true,
                 },
@@ -228,8 +256,32 @@ function roboflowWorkflowApi(apiKey) {
           res.setHeader('Content-Type', 'application/json')
 
           if (!apiKey) {
-            res.statusCode = 500
-            res.end(JSON.stringify({ error: 'ROBOFLOW_API_KEY is not configured' }))
+            let payloadText = ''
+            try {
+              const payload = JSON.parse(body)
+              payloadText = String(payload?.inputs?.report_text ?? '').toLowerCase()
+            } catch {}
+            const disasterType = /tsunami/.test(payloadText)
+              ? 'tsunami'
+              : /earthquake|gempa/.test(payloadText)
+              ? 'earthquake'
+              : /flood|banjir/.test(payloadText)
+              ? 'flood'
+              : /landslide|longsor/.test(payloadText)
+              ? 'landslide'
+              : /volcanic|gunung meletus|erupsi/.test(payloadText)
+              ? 'volcanic eruption'
+              : 'general emergency'
+            res.statusCode = 200
+            res.end(JSON.stringify({
+              outputs: [{
+                incident_type: disasterType,
+                severity_score: 5,
+                description: 'Roboflow is not configured in local preview; returning a neutral fallback response.',
+                confidence: 0.25,
+                predictions: []
+              }]
+            }))
             return
           }
 
@@ -351,14 +403,12 @@ export default defineConfig(({ mode }) => {
       roboflowWorkflowApi(env.ROBOFLOW_API_KEY),
       roboflowWebrtcApi(env.ROBOFLOW_API_KEY),
       figmaAssetResolver(),
-      // The React and Tailwind plugins are both required for Make, even if
-      // Tailwind is not being actively used – do not remove them
+      // React and Tailwind power the mobile prototype UI.
       react(),
       tailwindcss(),
     ],
     resolve: {
       alias: {
-        // Alias @ to the src directory
         '@': path.resolve(__dirname, './src'),
       },
     },
