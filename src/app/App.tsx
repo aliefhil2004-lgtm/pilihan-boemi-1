@@ -131,7 +131,9 @@ export default function App() {
     contactName: string;
     contactRole: string;
     serviceType?: ServiceType;
+    serviceTypes?: ServiceType[];
     callerRole: 'civilian' | 'service';
+    phoneNumber?: string;
   } | null>(null);
   const [historyReportId, setHistoryReportId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -474,7 +476,9 @@ const handleOpenCall = (
     contactName: string;
     contactRole: string;
     serviceType?: ServiceType;
+    serviceTypes?: ServiceType[];
     callerRole: 'civilian' | 'service';
+    phoneNumber?: string;
   },
   returnScreen: Screen = currentScreen
 ) => {
@@ -650,10 +654,14 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
             if (emergencyData.id) handleOpenChat(emergencyData.id, 'result');
           }}
           onCallResponder={() => handleOpenCall({
-            contactName: primaryEmergencyService === 'ambulance' ? 'Medic Command' : primaryEmergencyService === 'fire' ? 'Fire Command' : 'Police Command',
-            contactRole: primaryEmergencyService === 'ambulance' ? 'Medic Responder' : primaryEmergencyService === 'fire' ? 'Fire Responder' : 'Police Responder',
+            contactName: 'Emergency Dispatch',
+            contactRole: (emergencyData.services ?? [primaryEmergencyService])
+              .map(service => service === 'ambulance' ? 'Paramedic' : service === 'fire' ? 'Fire Fighter' : 'Police')
+              .join(' & '),
             serviceType: primaryEmergencyService,
-            callerRole: 'civilian'
+            serviceTypes: emergencyData.services ?? [primaryEmergencyService],
+            callerRole: 'civilian',
+            phoneNumber: getServiceContactNumber(primaryEmergencyService)
           }, 'result')}
           onViewDetails={() => {
             setHistoryReportId(emergencyData.id ?? null);
@@ -686,7 +694,9 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
             contactName: 'Mytha Floyen',
             contactRole: 'Civilian',
             serviceType: selectedService,
-            callerRole: 'service'
+            serviceTypes: [selectedService],
+            callerRole: 'service',
+            phoneNumber: userProfile?.phone
           }, 'service-dashboard')}
         />
       )}
