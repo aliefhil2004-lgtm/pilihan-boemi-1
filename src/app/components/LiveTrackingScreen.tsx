@@ -187,21 +187,21 @@ export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, onBac
           ))}
         </MapContainer>
 
-        <div className="absolute right-4 top-5 z-[500] w-[216px] rounded-2xl bg-[#2e344f]/95 p-5 text-white shadow-[0_16px_35px_rgba(15,23,42,0.28)] backdrop-blur">
-          <div className="mb-4 flex items-center gap-3 text-[14px] font-bold">
-            <AlertTriangle className="h-4 w-4 text-[#ff3b30]" />
+        <div className="absolute right-4 top-5 z-[500] w-[172px] rounded-2xl bg-[#2e344f]/95 p-4 text-white shadow-[0_16px_35px_rgba(15,23,42,0.28)] backdrop-blur">
+          <div className="mb-3 flex items-center gap-2 text-[13px] font-bold">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-[#ff3b30]" />
             Danger Zones
           </div>
-          <div className="space-y-3 text-[14px]">
+          <div className="space-y-2.5 text-[12px]">
             {[
               { label: 'Critical', color: '#dc2626' },
               { label: 'High', color: '#f97316' },
               { label: 'Yellow caution', color: '#ffc21a' },
               { label: 'Watch', color: '#18b36b' }
             ].map(zone => (
-              <div key={zone.label} className="flex items-center gap-3">
-                <span className="h-5 w-5 rounded-full" style={{ backgroundColor: zone.color }} />
-                <span>{zone.label}</span>
+              <div key={zone.label} className="flex items-center gap-2.5">
+                <span className="h-4 w-4 shrink-0 rounded-full" style={{ backgroundColor: zone.color }} />
+                <span className="leading-4">{zone.label}</span>
               </div>
             ))}
           </div>
@@ -221,29 +221,31 @@ export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, onBac
           </button>
         </div>
 
-        {closestEta && (
-          <div className="absolute bottom-[160px] left-6 right-6 z-[500] flex items-center justify-between rounded-xl bg-white/95 px-4 py-3 text-[12px] font-semibold text-[#0c3249] shadow-[0_10px_24px_rgba(15,23,42,0.18)]">
-            <span>{closestEta} min ETA</span>
-            <span>{routeList[0]?.trafficLevel ? `Traffic ${routeList[0].trafficLevel}` : 'Traffic estimate'}</span>
-          </div>
-        )}
+        <div className="absolute bottom-8 left-5 right-5 z-[500] space-y-2">
+          {closestEta && (
+            <div className="flex items-center justify-between rounded-xl bg-white/95 px-4 py-3 text-[12px] font-semibold text-[#0c3249] shadow-[0_10px_24px_rgba(15,23,42,0.18)] backdrop-blur">
+              <span>{closestEta} min ETA</span>
+              <span>{routeList[0]?.trafficLevel ? `Traffic ${routeList[0].trafficLevel}` : 'Traffic estimate'}</span>
+            </div>
+          )}
 
-        <div className="absolute bottom-[66px] left-6 right-6 z-[500] rounded-lg bg-[#2e344f]/95 p-5 text-white shadow-[0_14px_35px_rgba(15,23,42,0.26)] backdrop-blur">
-          <div className="grid grid-cols-3 gap-4">
-            {(['ambulance', 'fire', 'police'] as const).map(service => {
-              const config = serviceConfig[service];
-              const Icon = config.icon;
-              const count = visibleResponderServices.includes(service) ? 1 : 0;
-              return (
-                <div key={service} className="min-w-0">
-                  <div className="mb-2 flex items-center gap-2 text-[13px] font-semibold" style={{ color: config.color }}>
-                    <Icon className="h-4 w-4" />
-                    <span className="truncate">{config.name}</span>
+          <div className="rounded-xl bg-[#2e344f]/95 px-4 py-4 text-white shadow-[0_14px_35px_rgba(15,23,42,0.26)] backdrop-blur">
+            <div className="grid grid-cols-3 gap-3">
+              {(['ambulance', 'fire', 'police'] as const).map(service => {
+                const config = serviceConfig[service];
+                const Icon = config.icon;
+                const count = visibleResponderServices.includes(service) ? 1 : 0;
+                return (
+                  <div key={service} className="min-w-0">
+                    <div className="mb-2 flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: config.color }}>
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{config.name}</span>
+                    </div>
+                    <p className="text-[28px] font-bold leading-7">{count}</p>
                   </div>
-                  <p className="text-[30px] font-bold leading-8">{count}</p>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>
