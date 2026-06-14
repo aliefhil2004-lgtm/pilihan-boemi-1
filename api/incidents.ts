@@ -1,5 +1,6 @@
+import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue } from 'firebase-admin/firestore';
-import { getAdminFirestore } from '../server/firebaseAdmin';
+import { getFirestore } from 'firebase-admin/firestore';
 
 type ServiceType = 'ambulance' | 'fire' | 'police';
 type ReportStatus = 'pending' | 'responding' | 'arrived' | 'resolved' | 'done';
@@ -25,6 +26,19 @@ const allowedTransitions: Record<ReportStatus, ReportStatus[]> = {
   resolved: ['done'],
   done: []
 };
+
+function getServiceAccount() {
+  const value = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  if (!value) throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON is not configured');
+  return JSON.parse(value);
+}
+
+function getAdminFirestore() {
+  if (!getApps().length) {
+    initializeApp({ credential: cert(getServiceAccount()) });
+  }
+  return getFirestore();
+}
 
 function parseBody(value: unknown): Record<string, unknown> {
   if (typeof value === 'string') return JSON.parse(value);
