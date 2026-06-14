@@ -1,7 +1,7 @@
 
   # Emergency Response App UI
 
-  This is a code bundle for Emergency Response App UI. The original project is available at https://www.figma.com/design/CJvN4n0b4HsTI9DvCslAsr/Emergency-Response-App-UI.
+  This is a code bundle for Emergency Response App UI. The original project is available at https://www.figma.com/proto/8akhJseD0KGlak6lWqCpdP/P2A-Hackathon-ready?node-id=55-165&t=zlFaxAU5O0dmJAXw-1.
 
   ## Running the code
 
