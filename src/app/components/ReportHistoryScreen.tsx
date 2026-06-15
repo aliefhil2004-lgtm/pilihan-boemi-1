@@ -78,6 +78,15 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
     const reportServices = getReportServices(selectedReport);
     const primaryService = reportServices[0] ?? selectedReport.service ?? 'ambulance';
     const reportContext = `${selectedReport.emergencyType ?? ''} ${selectedReport.detectedIndicators?.join(' ') ?? ''} ${selectedReport.description}`;
+    const reportTitle = selectedReport.emergencyType?.trim() || 'Emergency Report';
+    const timelineEntries = selectedReport.auditTrail?.length
+      ? selectedReport.auditTrail
+      : [{
+          id: `${selectedReport.id}-created`,
+          label: 'Emergency report submitted',
+          timestamp: new Date(selectedReport.timestamp).toISOString()
+        }];
+    const submittedTimeLabel = new Date(selectedReport.timestamp).toLocaleString();
 
     return (
       <div className="flex h-full flex-col bg-white pb-[104px] text-[#0b3850]">
@@ -109,7 +118,7 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
             <article className="rounded-[16px] border border-[#e1e5ea] bg-white p-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h2 className="text-[22px] font-extrabold leading-7">Building Fire Report</h2>
+                  <h2 className="text-[22px] font-extrabold leading-7">{reportTitle}</h2>
                   <p className="mt-1 text-[13px] font-bold text-[#9aa3b1]">#RPT-001</p>
                 </div>
                 <span className={`rounded-full border px-3 py-1.5 text-[11px] font-bold ${severityStyles[selectedReport.severity]}`}>
@@ -143,7 +152,7 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
 
               <div className="mt-5 space-y-3 text-[16px] leading-5">
                 <p className="flex items-center gap-3"><MapPin className="h-[18px] w-[18px] shrink-0" /><span>{selectedReport.location}</span></p>
-                <p className="flex items-center gap-3"><Clock className="h-[18px] w-[18px] shrink-0" /><span>05/06/2026, 18:29:53</span></p>
+                <p className="flex items-center gap-3"><Clock className="h-[18px] w-[18px] shrink-0" /><span>{submittedTimeLabel}</span></p>
                 <p>Severity scale: <span className="font-extrabold text-[#d21a25]">{selectedReport.injuryScale}/10</span></p>
               </div>
 
@@ -152,6 +161,18 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
                 {(selectedReport.detectedIndicators?.length ? selectedReport.detectedIndicators : ['Manual review recommended']).map(item => (
                   <p key={item} className="mt-2">- {item}</p>
                 ))}
+              </div>
+
+              <div className="mt-5 rounded-xl bg-[#f7f7f7] p-4 text-[#0b3850]">
+                <p className="mb-4 text-[20px] font-extrabold leading-7">Response Timeline</p>
+                <div className="space-y-4">
+                  {timelineEntries.map(entry => (
+                    <div key={entry.id} className="border-l-4 border-[#0b3850] py-1 pl-7">
+                      <p className="text-[16px] leading-6">{entry.label}</p>
+                      <p className="text-[15px] leading-6">{new Date(entry.timestamp).toLocaleString()}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
             </article>
           </div>

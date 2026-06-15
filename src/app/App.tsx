@@ -72,6 +72,7 @@ interface EmergencyData {
   photo: string | null;
   description: string;
   location: string;
+  submittedAt?: string;
   coords?: { lat: number; lng: number };
   injuryScale?: number;
   priority?: 'Critical' | 'Medium' | 'Low';
@@ -368,6 +369,7 @@ export default function App() {
         : aiResult.service;
       const orderedServices = mapResponsePlanToServices(responsePlan, requiredServices);
       const reportId = Date.now().toString();
+      const submittedAt = new Date().toISOString();
       if (pendingReportRef.current !== data) return;
       setSelectedService(aiResult.service);
 
@@ -386,6 +388,7 @@ export default function App() {
         annotatedImage: aiResult.annotatedImage,
         privacyRegions: aiResult.privacyRegions,
         id: reportId,
+        submittedAt,
         services: orderedServices
       };
 
@@ -414,14 +417,14 @@ export default function App() {
         detectedIndicators,
         privacyRegions: aiResult.privacyRegions,
         countryCode: country.code,
-        timestamp: new Date(),
+        timestamp: submittedAt,
         status: 'pending',
         auditTrail: [{
           id: `${reportId}-created`,
           service: aiResult.service,
           action: 'report_created',
           label: 'Emergency report submitted',
-          timestamp: new Date().toISOString()
+          timestamp: submittedAt
         }]
       };
 
@@ -640,6 +643,7 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
           recommendedService={selectedService}
           recommendedServices={emergencyData.services ?? [selectedService]}
           reportId={emergencyData.id}
+          submittedAt={emergencyData.submittedAt}
           injuryScale={emergencyData.injuryScale || 5}
           location={emergencyData.location}
           detectedIndicators={emergencyData.detectedIndicators}

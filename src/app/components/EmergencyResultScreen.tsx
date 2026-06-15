@@ -14,6 +14,7 @@ interface EmergencyResultScreenProps {
   recommendedService: ServiceType;
   recommendedServices: ServiceType[];
   reportId?: string;
+  submittedAt?: string;
   injuryScale: number;
   location: string;
   detectedIndicators?: string[];
@@ -36,6 +37,7 @@ export function EmergencyResultScreen({
   priority,
   recommendedServices,
   reportId,
+  submittedAt,
   injuryScale,
   location,
   detectedIndicators,
@@ -53,6 +55,9 @@ export function EmergencyResultScreen({
 }: EmergencyResultScreenProps) {
   const [isAccepted, setIsAccepted] = useState(false);
   const [trackingRequested, setTrackingRequested] = useState(false);
+  const reportTitle = emergencyType?.trim() || 'Emergency Report';
+  const submittedTime = submittedAt ? new Date(submittedAt) : new Date();
+  const submittedTimeLabel = Number.isNaN(submittedTime.getTime()) ? new Date().toLocaleString() : submittedTime.toLocaleString();
 
   useEffect(() => {
     if (!isFalseReport) return undefined;
@@ -156,7 +161,7 @@ export function EmergencyResultScreen({
           <article className="rounded-[16px] border border-[#e1e5ea] bg-white p-5">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-[22px] font-extrabold leading-7">Building Fire Report</h2>
+                <h2 className="text-[22px] font-extrabold leading-7">{reportTitle}</h2>
                 <p className="mt-1 text-[13px] font-bold text-[#9aa3b1]">#RPT-001</p>
               </div>
               <span className="rounded-full border border-[#f7d36b] bg-[#fff5d8] px-3 py-1.5 text-[11px] font-bold text-[#e4a900]">
@@ -190,7 +195,7 @@ export function EmergencyResultScreen({
 
             <div className="mt-5 space-y-3 text-[16px] leading-5">
               <p className="flex items-center gap-3"><MapPin className="h-[18px] w-[18px] shrink-0" /><span>{location}</span></p>
-              <p className="flex items-center gap-3"><Clock className="h-[18px] w-[18px] shrink-0" /><span>05/06/2026, 18:29:53</span></p>
+              <p className="flex items-center gap-3"><Clock className="h-[18px] w-[18px] shrink-0" /><span>{submittedTimeLabel}</span></p>
               <p>Severity scale: <span className="font-extrabold text-[#d21a25]">{injuryScale}/10</span></p>
             </div>
 
@@ -202,6 +207,14 @@ export function EmergencyResultScreen({
               ).map(item => (
                 <p key={item} className="mt-2">- {item}</p>
               ))}
+            </div>
+
+            <div className="mt-5 rounded-xl bg-[#f7f7f7] p-4 text-[#0b3850]">
+              <p className="mb-4 text-[20px] font-extrabold leading-7">Response Timeline</p>
+              <div className="border-l-4 border-[#0b3850] py-1 pl-7">
+                <p className="text-[16px] leading-6">Emergency report submitted</p>
+                <p className="text-[15px] leading-6">{submittedTimeLabel}</p>
+              </div>
             </div>
           </article>
         </div>
