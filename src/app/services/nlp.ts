@@ -95,8 +95,55 @@ const invisibleEmergencyRules: Array<{
   }
 ];
 
+const localNlpRules: Array<{
+  pattern: RegExp;
+  result: NlpEmergencyResult;
+}> = [
+  ...invisibleEmergencyRules,
+  {
+    pattern: /(pendarahan|berdarah|darah|luka berat|luka parah|patah tulang|kecelakaan|tabrakan|tertabrak|korban|pingsan|tidak sadar|injury|bleeding|wound|fracture|accident|crash|unconscious)/i,
+    result: {
+      type: 'Medical Emergency',
+      service: 'ambulance',
+      services: ['ambulance'],
+      score: 8,
+      indicators: ['Local NLP rule: injury or bleeding needs medical response']
+    }
+  },
+  {
+    pattern: /(kebakaran|api|asap|terbakar|ledakan|meledak|fire|flame|smoke|burning|explosion)/i,
+    result: {
+      type: 'Fire Emergency',
+      service: 'fire',
+      services: ['fire'],
+      score: 8,
+      indicators: ['Local NLP rule: fire or smoke reported']
+    }
+  },
+  {
+    pattern: /(pencurian|maling|rampok|perampokan|begal|kekerasan|berkelahi|senjata|pisau|pistol|polisi|crime|theft|robbery|assault|weapon|knife|gun|police)/i,
+    result: {
+      type: 'Police Emergency',
+      service: 'police',
+      services: ['police'],
+      score: 8,
+      indicators: ['Local NLP rule: police or security response needed']
+    }
+  },
+  {
+    pattern: /(banjir|longsor|gempa|tsunami|badai|puting beliung|flood|landslide|earthquake|storm)/i,
+    result: {
+      type: 'Natural Disaster',
+      service: 'fire',
+      services: ['fire'],
+      score: 8,
+      indicators: ['Local NLP rule: disaster response needed']
+    }
+  }
+];
+
 function analyzeTextWithLocalSafetyRules(text: string): NlpEmergencyResult | null {
-  const rule = invisibleEmergencyRules.find(item => item.pattern.test(text));
+  const rule = localNlpRules.find(item => item.pattern.test(text));
   return rule?.result ?? null;
 }
 
@@ -110,7 +157,7 @@ export async function analyzeEmergencyTextWithNlp(text: string): Promise<NlpEmer
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text })
     });
-    if (!response.ok) return null;
+    if (!response.ok) return localResult;
     const result = await response.json() as {
       available?: boolean;
       model?: string;

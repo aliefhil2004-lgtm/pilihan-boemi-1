@@ -367,7 +367,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
     });
 
     setReports(updatedReports);
-    replaceReports(updatedReports, false);
+    replaceReports(updatedReports);
     void Promise.all(
       updatedReports
         .filter(report => selected.has(report.id))
