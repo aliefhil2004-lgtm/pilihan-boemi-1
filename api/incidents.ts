@@ -116,7 +116,9 @@ export default async function handler(request: VercelRequest, response: VercelRe
         if (currentStatus !== status && !allowedTransitions[currentStatus].includes(status)) {
           throw new Error(`Invalid status transition: ${currentStatus} to ${status}`);
         }
-        const assignment = body.assignment && typeof body.assignment === 'object' ? body.assignment : undefined;
+        const assignment = body.assignment && typeof body.assignment === 'object'
+          ? body.assignment as { unit?: string }
+          : undefined;
         const label =
           status === 'responding' ? `${assignment?.unit ?? service} dispatched` :
           status === 'arrived' ? `${assignment?.unit ?? service} arrived on scene` :

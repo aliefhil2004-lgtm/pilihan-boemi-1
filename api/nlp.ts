@@ -50,12 +50,13 @@ function normalizeClassificationOutput(value: unknown) {
 
   const payload = value as {
     label?: unknown;
+    score?: unknown;
     labels?: unknown;
     scores?: unknown;
   };
 
   if (typeof payload.label === 'string' && Number.isFinite(Number(payload.score))) {
-    return [{ label: payload.label, score: Number((payload as { score?: unknown }).score ?? 0) }];
+    return [{ label: payload.label, score: Number(payload.score ?? 0) }];
   }
 
   return normalizeResult(value) ?? [];

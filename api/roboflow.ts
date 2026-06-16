@@ -32,6 +32,13 @@ function parseBody(value: unknown) {
   return {} as Record<string, unknown>;
 }
 
+function getReportText(body: Record<string, unknown> | null) {
+  const inputs = body?.inputs;
+  if (!inputs || typeof inputs !== 'object') return '';
+  const reportText = (inputs as { report_text?: unknown }).report_text;
+  return typeof reportText === 'string' ? reportText.toLowerCase() : '';
+}
+
 export default async function handler(request: VercelRequest, response: VercelResponse) {
   response.setHeader('Content-Type', 'application/json');
 
@@ -43,9 +50,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
 
   if (!process.env.ROBOFLOW_API_KEY) {
     const requestBody = parseBody(request.body);
-    const reportText = typeof requestBody?.inputs?.report_text === 'string'
-      ? requestBody.inputs.report_text.toLowerCase()
-      : '';
+    const reportText = getReportText(requestBody);
     const disasterType = /tsunami/.test(reportText)
       ? 'tsunami'
       : /earthquake|gempa/.test(reportText)
