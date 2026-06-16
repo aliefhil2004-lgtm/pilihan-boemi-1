@@ -4,7 +4,7 @@ import { Circle, MapContainer, Marker, Polyline, Popup, TileLayer } from 'react-
 import { fetchLiveGps } from '../services/liveGps';
 import { getReportMarkerIcon, serviceMarkerIcons } from '../utils/mapMarkers';
 import { cleanupExpiredReports } from '../services/reportStorage';
-import { getServiceStatus, type ServiceType, type StoredEmergencyReport, type UnitAssignment } from '../types/emergency';
+import { getReportServices, getServiceStatus, type ServiceType, type StoredEmergencyReport, type UnitAssignment } from '../types/emergency';
 import { fetchDrivingRoute } from '../services/routing';
 import { serviceUnitConfig } from '../config/serviceUnits';
 import { dangerZones, getVisibleDangerZones } from '../config/dangerZones';
@@ -31,6 +31,23 @@ interface RouteSummary {
   distanceKm: number;
   liveGps: boolean;
   trafficLevel?: 'light' | 'moderate' | 'heavy' | 'severe';
+}
+
+const inactiveStatuses = ['done', 'resolved', 'declined'] as const;
+
+function getActiveServicesForReport(report: StoredEmergencyReport) {
+  return getReportServices(report).filter(service => !inactiveStatuses.includes(getServiceStatus(report, service) as typeof inactiveStatuses[number]));
+}
+
+function getPrimaryReportService(report: StoredEmergencyReport): ServiceType {
+  const services = getActiveServicesForReport(report);
+  if (services.includes('fire')) return 'fire';
+  if (services.includes('police')) return 'police';
+  return services[0] ?? report.service ?? 'ambulance';
+}
+
+function hasDangerZoneService(report: StoredEmergencyReport) {
+  return getActiveServicesForReport(report).some(service => service === 'fire' || service === 'police');
 }
 
 function ResponderRoute({
@@ -114,6 +131,7 @@ function ResponderRoute({
 
 export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, userRole, currentUserId, onOpenChat, onBack }: LiveTrackingScreenProps) {
   const [report, setReport] = useState<StoredEmergencyReport | null>(null);
+  const [otherReports, setOtherReports] = useState<StoredEmergencyReport[]>([]);
   const [routeSummaries, setRouteSummaries] = useState<Partial<Record<ServiceType, RouteSummary>>>({});
   const tomtomApiKey = import.meta.env.VITE_TOMTOM_API_KEY as string | undefined;
   const services = [...new Set(serviceTypes)];
@@ -122,13 +140,16 @@ export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, userR
     : [];
   const canAccessReport = userRole === 'service' || !report?.reporterUid || report.reporterUid === currentUserId;
   const visibleResponderServices = canAccessReport ? activeServices : [];
-  const hasDangerZoneService = activeServices.some(service => service === 'fire' || service === 'police');
+  const currentReportHasDangerZone = activeServices.some(service => service === 'fire' || service === 'police');
   const zoneScale = report?.injuryScale ?? 5;
   const reportLocation = report?.coords ?? userLocation;
   const locationParts = (report?.location ?? 'Report location').split(',').map(part => part.trim()).filter(Boolean);
   const locationTitle = locationParts[0] ?? 'Report location';
   const locationSubtitle = locationParts.slice(1, 3).join(', ');
-  const visibleZones = hasDangerZoneService ? getVisibleDangerZones(zoneScale) : [];
+  const visibleZones = currentReportHasDangerZone ? getVisibleDangerZones(zoneScale) : [];
+  const visibleOtherReports = canAccessReport
+    ? otherReports.filter(item => item.coords && getActiveServicesForReport(item).length > 0)
+    : [];
   const routeList = visibleResponderServices
     .map(service => routeSummaries[service])
     .filter((summary): summary is RouteSummary => Boolean(summary?.liveGps));
@@ -136,8 +157,10 @@ export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, userR
 
   useEffect(() => {
     const refresh = () => {
-      const nextReport = cleanupExpiredReports().find(item => item.id === reportId) ?? null;
+      const reports = cleanupExpiredReports();
+      const nextReport = reports.find(item => item.id === reportId) ?? null;
       setReport(nextReport);
+      setOtherReports(reports.filter(item => item.id !== reportId));
     };
     refresh();
     const interval = window.setInterval(refresh, 1500);
@@ -193,6 +216,36 @@ export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, userR
               <Popup>{zone.label} zone around the report location</Popup>
             </Circle>
           ))}
+          {visibleOtherReports.flatMap(otherReport => (
+            hasDangerZoneService(otherReport)
+              ? getVisibleDangerZones(otherReport.injuryScale).map(zone => (
+                  <Circle
+                    key={`${otherReport.id}-${zone.label}`}
+                    center={[otherReport.coords!.lat, otherReport.coords!.lng]}
+                    radius={zone.radiusMeters}
+                    pathOptions={{ color: zone.stroke, fillColor: zone.color, fillOpacity: Math.max(0.06, zone.fillOpacity * 0.55), weight: 1.7, dashArray: '6 7' }}
+                  >
+                    <Popup>{zone.label} zone around another emergency location</Popup>
+                  </Circle>
+                ))
+              : []
+          ))}
+          {visibleOtherReports.map(otherReport => {
+            const primaryService = getPrimaryReportService(otherReport);
+            return (
+              <Marker
+                key={otherReport.id}
+                position={[otherReport.coords!.lat, otherReport.coords!.lng]}
+                icon={getReportMarkerIcon(otherReport, primaryService)}
+              >
+                <Popup>
+                  Other emergency location<br />
+                  {otherReport.emergencyType ?? 'Emergency Report'}<br />
+                  {otherReport.location}
+                </Popup>
+              </Marker>
+            );
+          })}
           <Marker position={[reportLocation.lat, reportLocation.lng]} icon={getReportMarkerIcon(report ?? { description: '', emergencyType: '', detectedIndicators: [] }, services[0] ?? 'ambulance')}>
             <Popup>Report location</Popup>
           </Marker>
