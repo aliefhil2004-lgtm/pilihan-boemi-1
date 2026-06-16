@@ -19,10 +19,10 @@ import { SplashScreen } from './components/SplashScreen';
 import { LocationPicker } from './components/LocationPicker';
 import { CountryPicker } from './components/CountryPicker';
 import { LanguageToggle } from './components/LanguageToggle';
-import { ArrowLeft, Globe2 } from 'lucide-react';
+import { ArrowLeft, Globe2, PhoneCall } from 'lucide-react';
 import { analyzeEmergency } from './services/ai';
 import { createServiceStatuses, getReportServices, type ServiceType, type StoredEmergencyReport } from './types/emergency';
-import { cleanupExpiredReports, deleteReports, resetPreviousHistoryOnce, saveReport } from './services/reportStorage';
+import { cleanupExpiredReports, createNextReportCode, replaceReports, resetPreviousHistoryOnce, saveReport } from './services/reportStorage';
 import { startReportSync } from './services/firebaseSync';
 import {
   getFriendlyAuthError,
@@ -36,6 +36,7 @@ import {
 } from './services/auth';
 import { getAseanCountry, type AseanCountryCode } from './config/asean';
 import { getServiceContactNumber } from './config/contacts';
+import { publishCallNotification, subscribeCallNotifications, type AppCallData, type CallNotification } from './services/callNotifications';
 import { t as translate, type Language } from './i18n';
 import type { PrivacyRegion } from './types/emergency';
 
@@ -69,13 +70,14 @@ interface RegisterData {
 
 interface EmergencyData {
   id?: string;
+  reportCode?: string;
   photo: string | null;
   description: string;
   location: string;
   submittedAt?: string;
   coords?: { lat: number; lng: number };
   injuryScale?: number;
-  priority?: 'Critical' | 'Medium' | 'Low';
+  priority?: 'High' | 'Medium' | 'Low';
   emergencyType?: string;
   detectedIndicators?: string[];
   services?: ServiceType[];
@@ -128,22 +130,22 @@ export default function App() {
   const [chatReportId, setChatReportId] = useState<string | null>(null);
   const [chatReturnScreen, setChatReturnScreen] = useState<Screen>('history');
   const [callReturnScreen, setCallReturnScreen] = useState<Screen>('home');
-  const [callData, setCallData] = useState<{
-    contactName: string;
-    contactRole: string;
-    serviceType?: ServiceType;
-    serviceTypes?: ServiceType[];
-    callerRole: 'civilian' | 'service';
-    phoneNumber?: string;
-  } | null>(null);
+  const [callData, setCallData] = useState<AppCallData | null>(null);
   const [historyReportId, setHistoryReportId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
   const [isProcessingReady, setIsProcessingReady] = useState(false);
+  const seenCallNotificationRef = useRef<string | null>(null);
+  const seenDeclineNotificationRef = useRef<Set<string>>(new Set(
+    typeof window === 'undefined'
+      ? []
+      : JSON.parse(localStorage.getItem('seenDeclineNotifications') || '[]')
+  ));
   const pendingReportRef = useRef<{
     photo: string | null;
     description: string;
     location: string;
+    coords?: { lat: number; lng: number };
   } | null>(null);
   const country = getAseanCountry(countryCode);
   const [userLocation, setUserLocation] = useState<UserLocation>(() => ({
@@ -330,6 +332,7 @@ export default function App() {
     photo: string | null;
     description: string;
     location: string;
+    coords?: { lat: number; lng: number };
   }) => {
     if (isSubmittingReport) return;
 
@@ -348,10 +351,10 @@ export default function App() {
       const severityScore =
         'severityScore' in aiResult && typeof aiResult.severityScore === 'number'
           ? aiResult.severityScore
-          : aiResult.severity === 'Critical'
-          ? 9
           : aiResult.severity === 'High'
-          ? 7
+          ? 9
+          : aiResult.severity === 'Medium'
+          ? 5
           : 5;
       const detectedIndicators =
         'indicators' in aiResult && Array.isArray(aiResult.indicators)
@@ -369,18 +372,21 @@ export default function App() {
         : aiResult.service;
       const orderedServices = mapResponsePlanToServices(responsePlan, requiredServices);
       const reportId = Date.now().toString();
+      const reportCode = createNextReportCode();
       const submittedAt = new Date().toISOString();
+      const reportCoords = data.coords ?? userLocation.coords;
       if (pendingReportRef.current !== data) return;
+      setUserLocation({ address: data.location, coords: reportCoords });
       setSelectedService(aiResult.service);
 
       const reportData: EmergencyData = {
         ...data,
-        coords: userLocation.coords,
+        coords: reportCoords,
         injuryScale: severityScore,
         priority:
-          aiResult.severity === 'Critical'
-            ? 'Critical'
-            : aiResult.severity === 'High' || aiResult.severity === 'Medium'
+          aiResult.severity === 'High'
+            ? 'High'
+            : aiResult.severity === 'Medium'
             ? 'Medium'
             : 'Low',
         emergencyType: aiResult.type,
@@ -388,6 +394,7 @@ export default function App() {
         annotatedImage: aiResult.annotatedImage,
         privacyRegions: aiResult.privacyRegions,
         id: reportId,
+        reportCode,
         submittedAt,
         services: orderedServices
       };
@@ -396,20 +403,19 @@ export default function App() {
 
       const newReport: StoredEmergencyReport = {
         id: reportId,
+        reportCode,
         photo: data.photo,
         description: data.description,
         location: data.location,
-        coords: userLocation.coords,
+        coords: reportCoords,
         service: aiResult.service,
         services: orderedServices,
         responsePlan,
         priorityRole,
         serviceStatuses: createServiceStatuses(orderedServices),
         severity:
-          aiResult.severity === 'Critical'
+          aiResult.severity === 'High'
             ? 'critical'
-            : aiResult.severity === 'High'
-            ? 'severe'
             : aiResult.severity === 'Medium'
             ? 'moderate'
             : 'minor',
@@ -419,6 +425,10 @@ export default function App() {
         countryCode: country.code,
         timestamp: submittedAt,
         status: 'pending',
+        reporterUid: userProfile?.uid,
+        reporterName: userProfile?.name,
+        reporterEmail: userProfile?.email,
+        reporterPhone: userProfile?.phone,
         auditTrail: [{
           id: `${reportId}-created`,
           service: aiResult.service,
@@ -458,14 +468,28 @@ export default function App() {
   };
 
   const handleCancelSubmittedReport = () => {
-    if (emergencyData.id) deleteReports([emergencyData.id]);
+    if (emergencyData.id) {
+      const reports = cleanupExpiredReports();
+      const updatedReports = reports.map(report => {
+        if (report.id !== emergencyData.id) return report;
+        const services = getReportServices(report);
+        return {
+          ...report,
+          status: 'declined' as const,
+          serviceStatuses: createServiceStatuses(services, 'declined')
+        };
+      });
+      replaceReports(updatedReports);
+    }
     setEmergencyData({ photo: null, description: '', location: '' });
     setHistoryReportId(null);
     setCurrentScreen('home');
-    toast.info(language === 'id' ? 'Laporan dibatalkan' : 'Report canceled');
-    window.setTimeout(() => {
-      if (emergencyData.id) deleteReports([emergencyData.id]);
-    }, 800);
+    toast.info(language === 'id' ? 'Laporan ditandai dibatalkan' : 'Report marked declined');
+  };
+
+  const handleResultBackHome = () => {
+    setHistoryReportId(null);
+    setCurrentScreen('home');
   };
 
 const handleOpenChat = (reportId: string, returnScreen: Screen = currentScreen) => {
@@ -474,20 +498,34 @@ const handleOpenChat = (reportId: string, returnScreen: Screen = currentScreen) 
   setCurrentScreen('chat');
 };
 
+const createIncomingCallData = (notification: CallNotification, receiverRole: Exclude<UserRole, null>): AppCallData => ({
+  contactName: notification.callerName || (notification.fromRole === 'civilian' ? 'Civilian Reporter' : 'Emergency Service'),
+  contactRole: notification.fromRole === 'civilian' ? 'Civilian' : notification.callData.contactRole,
+  serviceType: notification.callData.serviceType,
+  serviceTypes: notification.callData.serviceTypes,
+  callerRole: receiverRole,
+  phoneNumber: notification.callerPhone ?? notification.callData.phoneNumber
+});
+
 const handleOpenCall = (
-  data: {
-    contactName: string;
-    contactRole: string;
-    serviceType?: ServiceType;
-    serviceTypes?: ServiceType[];
-    callerRole: 'civilian' | 'service';
-    phoneNumber?: string;
-  },
-  returnScreen: Screen = currentScreen
+  data: AppCallData,
+  returnScreen: Screen = currentScreen,
+  options: { notifyPeer?: boolean } = {}
 ) => {
   setCallData(data);
   setCallReturnScreen(returnScreen);
   setCurrentScreen('call');
+
+  if (options.notifyPeer === false) return;
+  publishCallNotification({
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    createdAt: Date.now(),
+    fromRole: data.callerRole,
+    toRole: data.callerRole === 'civilian' ? 'service' : 'civilian',
+    callerName: userProfile?.name || (data.callerRole === 'civilian' ? 'Civilian Reporter' : 'Emergency Service'),
+    callerPhone: userProfile?.phone,
+    callData: data
+  });
 };
 
 const handleTrackReport = (report: StoredEmergencyReport) => {
@@ -496,6 +534,7 @@ const handleTrackReport = (report: StoredEmergencyReport) => {
   setSelectedService(services[0]);
   setEmergencyData({
     id: report.id,
+    reportCode: report.reportCode,
     photo: report.photo,
     description: report.description,
     location: report.location,
@@ -518,6 +557,84 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
     setCurrentScreen(screen);
   }
 };
+
+  useEffect(() => {
+    if (!userRole) return;
+
+    return subscribeCallNotifications(notification => {
+      if (seenCallNotificationRef.current === notification.id) return;
+      seenCallNotificationRef.current = notification.id;
+      if (notification.toRole !== userRole || notification.fromRole === userRole) return;
+      if (Date.now() - notification.createdAt > 30000) return;
+      if (
+        userRole === 'service' &&
+        notification.callData.serviceTypes?.length &&
+        !notification.callData.serviceTypes.includes(selectedService)
+      ) {
+        return;
+      }
+
+      const incomingCall = createIncomingCallData(notification, userRole);
+      toast.custom(toastId => (
+        <div className="pointer-events-auto flex w-[340px] items-center gap-3 rounded-2xl border border-[#dbe4ec] bg-white p-3 text-[#0b3850] shadow-[0_16px_36px_rgba(12,50,73,0.18)]">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#0b3850] text-white">
+            <PhoneCall className="h-5 w-5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-extrabold leading-5">Incoming call</p>
+            <p className="truncate text-[12px] font-semibold leading-4 text-[#64748b]">
+              {notification.callerName || incomingCall.contactName} calling {userRole === 'service' ? 'services' : 'citizen'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              toast.dismiss(toastId);
+              setCallData(incomingCall);
+              setCallReturnScreen(currentScreen);
+              setCurrentScreen('call');
+            }}
+            className="h-9 rounded-xl bg-[#0bb34f] px-4 text-[12px] font-extrabold text-white active:scale-95"
+          >
+            Answer
+          </button>
+        </div>
+      ), { duration: 12000 });
+    });
+  }, [currentScreen, selectedService, userRole]);
+
+  useEffect(() => {
+    if (userRole !== 'civilian' || !userProfile?.uid) return;
+
+    const refreshDeclineNotifications = () => {
+      const seen = seenDeclineNotificationRef.current;
+      const reports = cleanupExpiredReports();
+      reports.forEach(report => {
+        if (report.reporterUid && report.reporterUid !== userProfile.uid) return;
+        getReportServices(report).forEach(service => {
+          const reason = report.declineReasons?.[service];
+          if (getServiceStatus(report, service) !== 'declined' || !reason) return;
+          const key = `${report.id}:${service}:${reason}`;
+          if (seen.has(key)) return;
+          seen.add(key);
+          toast.info(`Report declined: ${reason}`, {
+            description: `#${report.reportCode ?? report.id} was declined by emergency service.`
+          });
+        });
+      });
+      localStorage.setItem('seenDeclineNotifications', JSON.stringify([...seen]));
+    };
+
+    refreshDeclineNotifications();
+    const interval = window.setInterval(refreshDeclineNotifications, 1500);
+    window.addEventListener('storage', refreshDeclineNotifications);
+    window.addEventListener('emergency-reports-updated', refreshDeclineNotifications);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('storage', refreshDeclineNotifications);
+      window.removeEventListener('emergency-reports-updated', refreshDeclineNotifications);
+    };
+  }, [userProfile?.uid, userRole]);
 
 
   const showBackButton =
@@ -608,11 +725,20 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
           onEmergencyStart={handleEmergencyStart}
           onServiceSelect={handleServiceSelect}
           onOpenDangerMap={() => setCurrentScreen('fire-map')}
+          onCallEmergency={() => handleOpenCall({
+            contactName: 'Emergency Dispatch',
+            contactRole: 'Emergency Hotline',
+            serviceType: 'ambulance',
+            serviceTypes: ['ambulance'],
+            callerRole: 'civilian',
+            phoneNumber: country.emergency.ambulance
+          }, 'home')}
           currentLocation={userLocation.address}
           onChangeLocation={handleCurrentLocationRefresh}
           country={country}
           userRole={userRole}
           serviceType={userRole === 'service' ? selectedService : undefined}
+          serviceDisplayName={userRole === 'service' ? userProfile?.name : undefined}
           language={language}
         />
       )}
@@ -622,6 +748,7 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
           onSubmit={handleReportSubmit}
           onBack={() => setCurrentScreen('home')}
           defaultLocation={userLocation.address}
+          defaultCoords={userLocation.coords}
           language={language}
         />
       )}
@@ -643,6 +770,7 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
           recommendedService={selectedService}
           recommendedServices={emergencyData.services ?? [selectedService]}
           reportId={emergencyData.id}
+          reportCode={emergencyData.reportCode}
           submittedAt={emergencyData.submittedAt}
           injuryScale={emergencyData.injuryScale || 5}
           location={emergencyData.location}
@@ -654,6 +782,7 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
           servicePhoneNumber={getServiceContactNumber(primaryEmergencyService)}
           canViewSensitiveMedia={canViewSensitiveMedia}
           onCancelReport={handleCancelSubmittedReport}
+          onBackHome={handleResultBackHome}
           onOpenChat={() => {
             if (emergencyData.id) handleOpenChat(emergencyData.id, 'result');
           }}
@@ -681,6 +810,8 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
           reportId={emergencyData.id ?? ''}
           serviceTypes={emergencyData.services ?? [selectedService]}
           userLocation={emergencyData.coords ?? userLocation.coords}
+          userRole={userRole}
+          currentUserId={userProfile?.uid}
           onOpenChat={() => emergencyData.id && handleOpenChat(emergencyData.id, 'tracking')}
           onBack={() => setCurrentScreen('history')}
           servicePhoneNumber={getServiceContactNumber(primaryEmergencyService)}
@@ -691,11 +822,14 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
         <EmergencyServiceDashboard
           country={country}
           serviceType={selectedService}
+          currentLocation={userLocation.address}
+          currentCoords={userLocation.coords}
           canViewSensitiveMedia={canViewSensitiveMedia}
+          serviceDisplayName={userProfile?.name}
           onBack={() => setCurrentScreen('home')}
           onOpenChat={reportId => handleOpenChat(reportId, 'service-dashboard')}
-          onCallCitizen={() => handleOpenCall({
-            contactName: 'Mytha Floyen',
+          onCallCitizen={(report) => handleOpenCall({
+            contactName: report.reporterName || 'Mytha Floyen',
             contactRole: 'Civilian',
             serviceType: selectedService,
             serviceTypes: [selectedService],
@@ -718,6 +852,24 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
         <ReportHistoryScreen
           initialReportId={historyReportId}
           onOpenChat={reportId => handleOpenChat(reportId, 'history')}
+          onOpenCall={report => {
+            const services = getReportServices(report);
+            const primaryService = services[0] ?? report.service ?? selectedService;
+            handleOpenCall({
+              contactName: userRole === 'civilian' ? 'Emergency Dispatch' : report.reporterName || 'Mytha Floyen',
+              contactRole: userRole === 'civilian'
+                ? services.map(service => service === 'ambulance' ? 'Medical Unit' : service === 'fire' ? 'Fire Unit' : 'Police Unit').join(' & ')
+                : 'Civilian',
+              serviceType: primaryService,
+              serviceTypes: services,
+              callerRole: userRole === 'civilian' ? 'civilian' : 'service',
+              phoneNumber: userRole === 'civilian'
+                ? getServiceContactNumber(primaryService)
+                : report.reporterPhone ?? userProfile?.phone
+            }, 'history');
+          }}
+          userRole={userRole}
+          currentUserId={userProfile?.uid}
           onTrack={handleTrackReport}
           canViewSensitiveMedia={canViewSensitiveMedia}
         />
@@ -751,6 +903,9 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
           reportId={chatReportId}
           userRole={userRole}
           serviceType={userRole === 'service' ? selectedService : undefined}
+          currentUserName={userProfile?.name}
+          serviceDisplayName={userRole === 'service' ? userProfile?.name : undefined}
+          onOpenCall={data => handleOpenCall(data, 'chat')}
           onBack={() => setCurrentScreen(chatReturnScreen)}
         />
       )}

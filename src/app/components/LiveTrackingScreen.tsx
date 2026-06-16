@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Ambulance, ArrowLeft, Crosshair, Flame, Layers, Shield } from 'lucide-react';
+import { AlertTriangle, Ambulance, ArrowLeft, Crosshair, Flame, Layers, MessageSquare, Shield } from 'lucide-react';
 import { Circle, MapContainer, Marker, Polyline, Popup, TileLayer } from 'react-leaflet';
 import { fetchLiveGps } from '../services/liveGps';
-import { civilianMarkerIcon, serviceMarkerIcons } from '../utils/mapMarkers';
+import { getReportMarkerIcon, serviceMarkerIcons } from '../utils/mapMarkers';
 import { cleanupExpiredReports } from '../services/reportStorage';
 import { getServiceStatus, type ServiceType, type StoredEmergencyReport, type UnitAssignment } from '../types/emergency';
 import { fetchDrivingRoute } from '../services/routing';
 import { serviceUnitConfig } from '../config/serviceUnits';
+import { dangerZones, getVisibleDangerZones } from '../config/dangerZones';
 
 interface LiveTrackingScreenProps {
   reportId: string;
   serviceTypes: ServiceType[];
   userLocation: { lat: number; lng: number };
+  userRole: 'civilian' | 'service' | null;
+  currentUserId?: string;
   onOpenChat: () => void;
   onBack?: () => void;
   servicePhoneNumber: string;
@@ -23,13 +26,6 @@ const serviceConfig = {
   police: { icon: Shield, name: 'Police', unit: serviceUnitConfig.police.unit, color: '#2563eb' }
 };
 
-const dangerZoneConfig = [
-  { label: 'Watch', minScale: 1, radius: 360, color: '#18b36b', fillOpacity: 0.16 },
-  { label: 'Yellow caution', minScale: 3, radius: 250, color: '#ffc21a', fillOpacity: 0.16 },
-  { label: 'High', minScale: 6, radius: 160, color: '#f97316', fillOpacity: 0.18 },
-  { label: 'Critical', minScale: 8, radius: 85, color: '#dc2626', fillOpacity: 0.22 }
-];
-
 interface RouteSummary {
   etaMinutes: number;
   distanceKm: number;
@@ -39,11 +35,13 @@ interface RouteSummary {
 
 function ResponderRoute({
   serviceType,
+  reportId,
   userLocation,
   assignment,
   onRouteUpdate
 }: {
   serviceType: ServiceType;
+  reportId: string;
   userLocation: { lat: number; lng: number };
   assignment?: UnitAssignment;
   onRouteUpdate: (service: ServiceType, summary: RouteSummary) => void;
@@ -55,17 +53,24 @@ function ResponderRoute({
   });
   const positionRef = useRef(position);
   const [routePositions, setRoutePositions] = useState<Array<[number, number]>>([]);
+  const [hasSharedGps, setHasSharedGps] = useState(false);
 
   useEffect(() => {
     const update = async () => {
-      const gps = await fetchLiveGps(serviceType);
+      const gps = await fetchLiveGps(serviceType, reportId);
+      const hasGps = Boolean(gps);
       const liveGps = Boolean(gps && Date.now() - gps.updatedAt < 30000);
-      const nextPosition = liveGps
-        ? { lat: gps!.lat, lng: gps!.lng }
-        : {
-            lat: positionRef.current.lat + (userLocation.lat - positionRef.current.lat) * 0.035,
-            lng: positionRef.current.lng + (userLocation.lng - positionRef.current.lng) * 0.035
-          };
+      setHasSharedGps(hasGps);
+      if (!hasGps) {
+        setRoutePositions([]);
+        onRouteUpdate(serviceType, {
+          etaMinutes: 0,
+          distanceKm: 0,
+          liveGps: false
+        });
+        return;
+      }
+      const nextPosition = { lat: gps!.lat, lng: gps!.lng };
 
       positionRef.current = nextPosition;
       setPosition(nextPosition);
@@ -76,7 +81,7 @@ function ResponderRoute({
       onRouteUpdate(serviceType, {
         etaMinutes: Math.max(1, Math.ceil(route.durationSeconds / 60)),
         distanceKm: route.distanceMeters / 1000,
-        liveGps,
+        liveGps: hasGps,
         trafficLevel: route.trafficLevel
       });
     };
@@ -90,42 +95,49 @@ function ResponderRoute({
       window.removeEventListener('storage', update);
       window.removeEventListener('emergency-gps-updated', update);
     };
-  }, [assignment?.unit, onRouteUpdate, serviceType, userLocation.lat, userLocation.lng]);
+  }, [assignment?.unit, onRouteUpdate, reportId, serviceType, userLocation.lat, userLocation.lng]);
 
   return (
+    hasSharedGps ? (
     <>
       <Polyline
         positions={routePositions}
         pathOptions={{ color: serviceConfig[serviceType].color, weight: 4, opacity: 0.72, dashArray: '8 8' }}
       />
       <Marker position={[position.lat, position.lng]} icon={serviceMarkerIcons[serviceType]}>
-        <Popup>{assignment?.unit ?? serviceConfig[serviceType].unit} on the way</Popup>
+        <Popup>{assignment?.unit ?? serviceConfig[serviceType].unit} {routePositions.length ? 'on the way' : 'last shared location'}</Popup>
       </Marker>
     </>
+    ) : null
   );
 }
 
-export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, onBack }: LiveTrackingScreenProps) {
+export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, userRole, currentUserId, onOpenChat, onBack }: LiveTrackingScreenProps) {
   const [report, setReport] = useState<StoredEmergencyReport | null>(null);
   const [routeSummaries, setRouteSummaries] = useState<Partial<Record<ServiceType, RouteSummary>>>({});
   const tomtomApiKey = import.meta.env.VITE_TOMTOM_API_KEY as string | undefined;
   const services = [...new Set(serviceTypes)];
   const activeServices = report
-    ? services.filter(service => ['responding', 'arrived', 'resolved', 'done'].includes(getServiceStatus(report, service)))
+    ? services.filter(service => ['responding', 'arrived', 'resolved'].includes(getServiceStatus(report, service)))
     : [];
-  const visibleResponderServices = activeServices.length ? activeServices : services;
+  const canAccessReport = userRole === 'service' || !report?.reporterUid || report.reporterUid === currentUserId;
+  const visibleResponderServices = canAccessReport ? activeServices : [];
+  const hasDangerZoneService = activeServices.some(service => service === 'fire' || service === 'police');
   const zoneScale = report?.injuryScale ?? 5;
-  const visibleZones = dangerZoneConfig
-    .filter(zone => zoneScale >= zone.minScale)
-    .sort((a, b) => b.radius - a.radius);
+  const reportLocation = report?.coords ?? userLocation;
+  const locationParts = (report?.location ?? 'Report location').split(',').map(part => part.trim()).filter(Boolean);
+  const locationTitle = locationParts[0] ?? 'Report location';
+  const locationSubtitle = locationParts.slice(1, 3).join(', ');
+  const visibleZones = hasDangerZoneService ? getVisibleDangerZones(zoneScale) : [];
   const routeList = visibleResponderServices
     .map(service => routeSummaries[service])
-    .filter((summary): summary is RouteSummary => Boolean(summary));
+    .filter((summary): summary is RouteSummary => Boolean(summary?.liveGps));
   const closestEta = routeList.length ? Math.min(...routeList.map(summary => summary.etaMinutes)) : null;
 
   useEffect(() => {
     const refresh = () => {
-      setReport(cleanupExpiredReports().find(item => item.id === reportId) ?? null);
+      const nextReport = cleanupExpiredReports().find(item => item.id === reportId) ?? null;
+      setReport(nextReport);
     };
     refresh();
     const interval = window.setInterval(refresh, 1500);
@@ -150,11 +162,19 @@ export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, onBac
             <ArrowLeft className="h-7 w-7" />
           </button>
         )}
-        <h1 className="text-[22px] font-bold leading-7">Danger Zone Map</h1>
+        <h1 className="text-[22px] font-bold leading-7">Live Tracking</h1>
       </header>
 
       <div className="relative flex-1 overflow-hidden">
-        <MapContainer center={[userLocation.lat, userLocation.lng]} zoom={15} className="h-full w-full">
+        {!canAccessReport && (
+          <div className="absolute inset-0 z-[900] flex items-center justify-center bg-white px-8 text-center">
+            <div>
+              <p className="text-[20px] font-extrabold leading-7 text-[#0c3249]">Live tracking unavailable</p>
+              <p className="mt-2 text-[14px] leading-5 text-[#64748b]">This report belongs to another citizen account.</p>
+            </div>
+          </div>
+        )}
+        <MapContainer key={`${reportLocation.lat}-${reportLocation.lng}`} center={[reportLocation.lat, reportLocation.lng]} zoom={15} className="h-full w-full">
           <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
           {tomtomApiKey && (
             <TileLayer
@@ -166,39 +186,36 @@ export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, onBac
           {visibleZones.map(zone => (
             <Circle
               key={zone.label}
-              center={[userLocation.lat, userLocation.lng]}
-              radius={zone.radius}
-              pathOptions={{ color: zone.color, fillColor: zone.color, fillOpacity: zone.fillOpacity, weight: 2 }}
+              center={[reportLocation.lat, reportLocation.lng]}
+              radius={zone.radiusMeters}
+              pathOptions={{ color: zone.stroke, fillColor: zone.color, fillOpacity: zone.fillOpacity, weight: 2.5 }}
             >
               <Popup>{zone.label} zone around the report location</Popup>
             </Circle>
           ))}
-          <Marker position={[userLocation.lat, userLocation.lng]} icon={civilianMarkerIcon}>
+          <Marker position={[reportLocation.lat, reportLocation.lng]} icon={getReportMarkerIcon(report ?? { description: '', emergencyType: '', detectedIndicators: [] }, services[0] ?? 'ambulance')}>
             <Popup>Report location</Popup>
           </Marker>
           {visibleResponderServices.map(service => (
             <ResponderRoute
               key={service}
               serviceType={service}
-              userLocation={userLocation}
+              reportId={reportId}
+              userLocation={reportLocation}
               assignment={report?.assignedUnits?.[service]}
               onRouteUpdate={handleRouteUpdate}
             />
           ))}
         </MapContainer>
 
+        {visibleZones.length > 0 && (
         <div className="absolute right-4 top-5 z-[500] w-[172px] rounded-2xl bg-[#2e344f]/95 p-4 text-white shadow-[0_16px_35px_rgba(15,23,42,0.28)] backdrop-blur">
           <div className="mb-3 flex items-center gap-2 text-[13px] font-bold">
             <AlertTriangle className="h-4 w-4 shrink-0 text-[#ff3b30]" />
             Danger Zones
           </div>
           <div className="space-y-2.5 text-[12px]">
-            {[
-              { label: 'Critical', color: '#dc2626' },
-              { label: 'High', color: '#f97316' },
-              { label: 'Yellow caution', color: '#ffc21a' },
-              { label: 'Watch', color: '#18b36b' }
-            ].map(zone => (
+            {[...dangerZones].reverse().map(zone => (
               <div key={zone.label} className="flex items-center gap-2.5">
                 <span className="h-4 w-4 shrink-0 rounded-full" style={{ backgroundColor: zone.color }} />
                 <span className="leading-4">{zone.label}</span>
@@ -206,10 +223,11 @@ export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, onBac
             ))}
           </div>
         </div>
+        )}
 
         <div className="absolute left-1/2 top-[42%] z-[400] -translate-x-1/2 text-center">
-          <p className="text-[30px] font-bold leading-8 text-[#42474d]/90 drop-shadow-sm">Jakarta</p>
-          <p className="text-[13px] font-bold uppercase tracking-[2px] text-[#42474d]/75">KB. Sayur</p>
+          <p className="text-[30px] font-bold leading-8 text-[#42474d]/90 drop-shadow-sm">{locationTitle}</p>
+          {locationSubtitle && <p className="text-[13px] font-bold uppercase tracking-[2px] text-[#42474d]/75">{locationSubtitle}</p>}
         </div>
 
         <div className="absolute bottom-[188px] right-4 z-[500] grid gap-2">
@@ -229,12 +247,21 @@ export function LiveTrackingScreen({ reportId, serviceTypes, userLocation, onBac
             </div>
           )}
 
+          <button
+            type="button"
+            onClick={onOpenChat}
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-white/95 px-4 text-[13px] font-extrabold text-[#0c3249] shadow-[0_10px_24px_rgba(15,23,42,0.18)] backdrop-blur active:scale-[0.99]"
+          >
+            <MessageSquare className="h-4 w-4" />
+            Chat with Emergency Service
+          </button>
+
           <div className="rounded-xl bg-[#2e344f]/95 px-4 py-4 text-white shadow-[0_14px_35px_rgba(15,23,42,0.26)] backdrop-blur">
             <div className="grid grid-cols-3 gap-3">
               {(['ambulance', 'fire', 'police'] as const).map(service => {
                 const config = serviceConfig[service];
                 const Icon = config.icon;
-                const count = visibleResponderServices.includes(service) ? 1 : 0;
+                const count = activeServices.includes(service) ? 1 : 0;
                 return (
                   <div key={service} className="min-w-0">
                     <div className="mb-2 flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: config.color }}>

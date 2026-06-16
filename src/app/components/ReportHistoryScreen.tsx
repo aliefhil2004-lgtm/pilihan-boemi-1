@@ -1,23 +1,27 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, CheckCircle2, Clock, Eye, MapPin, MessageSquare, Phone, Radio, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { getReportServices, getServiceStatus, type StoredEmergencyReport } from '../types/emergency';
+import { formatReportCode, getReportServices, getServiceStatus, type StoredEmergencyReport } from '../types/emergency';
 import { cleanupExpiredReports, deleteReports } from '../services/reportStorage';
+import { fetchLiveGps } from '../services/liveGps';
 import { PrivacyImage } from './PrivacyImage';
-import { getServiceContactNumber } from '../config/contacts';
 import { getServiceDisplayLabel } from '../utils/serviceLabels';
+import { formatReportDateTime } from '../utils/date';
 
 interface ReportHistoryScreenProps {
   initialReportId?: string | null;
   onOpenChat: (reportId: string) => void;
+  onOpenCall: (report: StoredEmergencyReport) => void;
   onTrack: (report: StoredEmergencyReport) => void;
   canViewSensitiveMedia: boolean;
+  userRole: 'civilian' | 'service' | null;
+  currentUserId?: string;
 }
 
 const severityStyles = {
-  minor: 'border-green-300 bg-green-50 text-green-700',
-  moderate: 'border-[#f7d36b] bg-[#fff5d8] text-[#e4a900]',
-  severe: 'border-orange-300 bg-orange-50 text-orange-600',
+  minor: 'border-blue-300 bg-blue-50 text-blue-700',
+  moderate: 'border-yellow-300 bg-yellow-50 text-yellow-700',
+  severe: 'border-red-300 bg-red-50 text-red-600',
   critical: 'border-red-300 bg-red-50 text-red-600'
 };
 
@@ -25,10 +29,27 @@ const severityLabels = {
   minor: 'LOW',
   moderate: 'MEDIUM',
   severe: 'HIGH',
-  critical: 'CRITICAL'
+  critical: 'HIGH'
 };
 
-export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canViewSensitiveMedia }: ReportHistoryScreenProps) {
+function isReportDone(report: StoredEmergencyReport) {
+  return getReportServices(report).every(service => getServiceStatus(report, service) === 'done');
+}
+
+function isReportDeclined(report: StoredEmergencyReport) {
+  return getReportServices(report).every(service => getServiceStatus(report, service) === 'declined');
+}
+
+function isReportHiddenForCitizen(report: StoredEmergencyReport) {
+  return isReportDone(report) || isReportDeclined(report);
+}
+
+async function reportHasLiveGps(report: StoredEmergencyReport) {
+  const locations = await Promise.all(getReportServices(report).map(service => fetchLiveGps(service, report.id)));
+  return locations.some(Boolean);
+}
+
+export function ReportHistoryScreen({ initialReportId, onOpenChat, onOpenCall, onTrack, canViewSensitiveMedia, userRole, currentUserId }: ReportHistoryScreenProps) {
   const [reports, setReports] = useState<StoredEmergencyReport[]>([]);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(initialReportId ?? null);
   const [isSelecting, setIsSelecting] = useState(false);
@@ -36,7 +57,9 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
   const [serviceFilter, setServiceFilter] = useState<'all' | 'pending' | 'responding'>('all');
 
   useEffect(() => {
-    const refresh = () => setReports(cleanupExpiredReports());
+    const canShowReport = (report: StoredEmergencyReport) =>
+      userRole === 'service' || !report.reporterUid || report.reporterUid === currentUserId;
+    const refresh = () => setReports(cleanupExpiredReports().filter(report => !isReportHiddenForCitizen(report) && canShowReport(report)));
     refresh();
     const interval = setInterval(refresh, 1500);
     window.addEventListener('storage', refresh);
@@ -46,7 +69,7 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
       window.removeEventListener('storage', refresh);
       window.removeEventListener('emergency-reports-updated', refresh);
     };
-  }, []);
+  }, [currentUserId, userRole]);
 
   const selectedReport = reports.find(report => report.id === selectedReportId);
   const toggleSelected = (reportId: string) => {
@@ -67,16 +90,19 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
   };
 
   const isReportAccepted = (report: StoredEmergencyReport) =>
-    getReportServices(report).some(service => getServiceStatus(report, service) !== 'pending');
+    getReportServices(report).some(service => ['responding', 'arrived', 'resolved', 'done'].includes(getServiceStatus(report, service)));
 
   const showWaitingToast = (feature: string) => {
     toast.info(`${feature} can be accessed after emergency services accept the report.`);
   };
 
+  const showWaitingForLiveGpsToast = () => {
+    toast.info('Live tracking can be accessed after emergency services share live GPS.');
+  };
+
   if (selectedReport) {
     const accepted = isReportAccepted(selectedReport);
     const reportServices = getReportServices(selectedReport);
-    const primaryService = reportServices[0] ?? selectedReport.service ?? 'ambulance';
     const reportContext = `${selectedReport.emergencyType ?? ''} ${selectedReport.detectedIndicators?.join(' ') ?? ''} ${selectedReport.description}`;
     const reportTitle = selectedReport.emergencyType?.trim() || 'Emergency Report';
     const timelineEntries = selectedReport.auditTrail?.length
@@ -86,7 +112,7 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
           label: 'Emergency report submitted',
           timestamp: new Date(selectedReport.timestamp).toISOString()
         }];
-    const submittedTimeLabel = new Date(selectedReport.timestamp).toLocaleString();
+    const submittedTimeLabel = formatReportDateTime(selectedReport.timestamp);
 
     return (
       <div className="flex h-full flex-col bg-white pb-[104px] text-[#0b3850]">
@@ -103,14 +129,16 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
 
         <main className="app-scrollbar flex-1 overflow-y-auto px-5 py-4">
           <div className="mx-auto max-w-sm space-y-4">
-            <section className="relative overflow-hidden rounded-[10px] bg-[#14751b] px-5 py-4 text-center text-white">
+            <section className={`relative overflow-hidden rounded-[10px] px-5 py-4 text-center text-white ${isReportDeclined(selectedReport) ? 'bg-[#9f1239]' : 'bg-[#14751b]'}`}>
               <span className="pointer-events-none absolute -right-3 -top-5 flex h-[76px] w-[76px] items-center justify-center rounded-full bg-white/15">
-                <CheckCircle2 className="h-11 w-11 text-white/40" />
+                {isReportDeclined(selectedReport) ? <X className="h-11 w-11 text-white/40" /> : <CheckCircle2 className="h-11 w-11 text-white/40" />}
               </span>
               <div className="relative">
-                <p className="text-[18px] font-bold leading-6">Report Sent</p>
+                <p className="text-[18px] font-bold leading-6">{isReportDeclined(selectedReport) ? 'Report Declined' : 'Report Sent'}</p>
                 <p className="mx-auto mt-1 max-w-[290px] text-[14px] leading-5 text-white/85">
-                  Report received. Stay safe and keep your phone available.
+                  {isReportDeclined(selectedReport)
+                    ? 'Sorry, emergency service declined this report. It will be removed automatically after 1 hour.'
+                    : 'Report received. Stay safe and keep your phone available.'}
                 </p>
               </div>
             </section>
@@ -119,7 +147,7 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h2 className="text-[22px] font-extrabold leading-7">{reportTitle}</h2>
-                  <p className="mt-1 text-[13px] font-bold text-[#9aa3b1]">#RPT-001</p>
+                  <p className="mt-1 text-[13px] font-bold text-[#9aa3b1]">#{formatReportCode(selectedReport)}</p>
                 </div>
                 <span className={`rounded-full border px-3 py-1.5 text-[11px] font-bold ${severityStyles[selectedReport.severity]}`}>
                   {severityLabels[selectedReport.severity]}
@@ -169,7 +197,7 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
                   {timelineEntries.map(entry => (
                     <div key={entry.id} className="border-l-4 border-[#0b3850] py-1 pl-7">
                       <p className="text-[16px] leading-6">{entry.label}</p>
-                      <p className="text-[15px] leading-6">{new Date(entry.timestamp).toLocaleString()}</p>
+                      <p className="text-[15px] leading-6">{formatReportDateTime(entry.timestamp)}</p>
                     </div>
                   ))}
                 </div>
@@ -198,8 +226,7 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
                 showWaitingToast('Phone call');
                 return;
               }
-              toast.success(`Calling assigned responder at ${getServiceContactNumber(primaryService)}`);
-              window.location.href = `tel:${getServiceContactNumber(primaryService)}`;
+              onOpenCall(selectedReport);
             }}
             className="flex h-[50px] items-center justify-center rounded-lg bg-[#0b3850] text-white transition hover:bg-[#123f59]"
             aria-label="Call responder"
@@ -207,9 +234,9 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
             <Phone className="h-[18px] w-[18px]" />
           </button>
           <button
-            onClick={() => {
-              if (!accepted) {
-                showWaitingToast('Live tracking');
+            onClick={async () => {
+              if (!(await reportHasLiveGps(selectedReport))) {
+                showWaitingForLiveGpsToast();
                 return;
               }
               onTrack(selectedReport);
@@ -219,7 +246,7 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
             }`}
           >
             <Radio className="h-[18px] w-[18px] shrink-0" />
-            <span className="truncate">{accepted ? 'Live Track Location' : 'Waiting for Acceptance'}</span>
+            <span className="truncate">{accepted ? 'Live Track Location' : 'Waiting for Live GPS'}</span>
           </button>
         </footer>
       </div>
@@ -274,7 +301,7 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
                   <h2 className="text-[20px] font-bold leading-8">{selectedReport.emergencyType ?? 'Emergency Report'}</h2>
-                  <p className="text-[10px] font-bold leading-3 text-[#0c3249]/50">#RPT-001</p>
+                  <p className="text-[10px] font-bold leading-3 text-[#0c3249]/50">#{formatReportCode(selectedReport)}</p>
                 </div>
                 <span className={`rounded-full border px-3 py-1 text-[10px] font-bold leading-[15px] tracking-[0.5px] ${severityStyles[selectedReport.severity]}`}>
                   {severityLabels[selectedReport.severity]}
@@ -314,7 +341,7 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
                     const status = selectedReport.serviceStatuses?.[service] ?? selectedReport.status;
                     if (serviceFilter !== 'all' && status !== serviceFilter) return null;
                     const label = getServiceDisplayLabel(service, `${selectedReport.emergencyType ?? ''} ${selectedReport.detectedIndicators?.join(' ') ?? ''} ${selectedReport.description}`);
-                    const statusLabel = status === 'pending' ? 'Pending' : status === 'responding' ? 'Responding' : status === 'arrived' ? 'Arrived' : status === 'done' ? 'Done' : 'Resolved';
+                    const statusLabel = status === 'pending' ? 'Pending' : status === 'responding' ? 'Responding' : status === 'arrived' ? 'Arrived' : status === 'done' ? 'Done' : status === 'declined' ? 'Declined' : 'Resolved';
                     const active = status === 'responding' || status === 'done';
                     return (
                       <div
@@ -341,7 +368,7 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
 
               <div className="space-y-2 text-[#0b3850]">
                 <p className="flex items-center gap-3 text-[12px] leading-5"><MapPin className="h-4 w-4" />{selectedReport.location}</p>
-                <p className="flex items-center gap-3 text-[14px] leading-5"><Clock className="h-4 w-4" />{new Date(selectedReport.timestamp).toLocaleString()}</p>
+                <p className="flex items-center gap-3 text-[14px] leading-5"><Clock className="h-4 w-4" />{formatReportDateTime(selectedReport.timestamp)}</p>
                 <p>Severity scale: <span className="font-bold">{selectedReport.injuryScale}/10</span></p>
               </div>
 
@@ -378,7 +405,7 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
                   {selectedReport.auditTrail.map(entry => (
                     <div key={entry.id} className="border-l-2 border-[#0b3850] py-1 pl-4 text-[13px]">
                       <p className="text-[#0b3850]">{entry.label}</p>
-                      <p className="mt-1 text-xs text-[#0b3850]">{new Date(entry.timestamp).toLocaleString()}</p>
+                      <p className="mt-1 text-xs text-[#0b3850]">{formatReportDateTime(entry.timestamp)}</p>
                     </div>
                   ))}
                 </div>
@@ -406,9 +433,7 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
                       showWaitingToast('Phone call');
                       return;
                     }
-                    if (selectedReport.reporterPhone) {
-                      window.location.href = `tel:${selectedReport.reporterPhone}`;
-                    }
+                    onOpenCall(selectedReport);
                   }}
                   className="flex h-[50px] items-center justify-center rounded-lg bg-[#0b3850] text-white hover:bg-[#123f59]"
                   aria-label="Call reporter"
@@ -416,9 +441,9 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
                   <Phone className="h-[18px] w-[18px]" />
                 </button>
                 <button
-                  onClick={() => {
-                    if (!isReportAccepted(selectedReport)) {
-                      showWaitingToast('Live tracking');
+                  onClick={async () => {
+                    if (!(await reportHasLiveGps(selectedReport))) {
+                      showWaitingForLiveGpsToast();
                       return;
                     }
                     onTrack(selectedReport);
@@ -428,7 +453,7 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
                   }`}
                 >
                   <Radio className="h-[18px] w-[18px] shrink-0" />
-                  <span className="truncate">{isReportAccepted(selectedReport) ? 'Live Track Location' : 'Waiting for Acceptance'}</span>
+                  <span className="truncate">{isReportAccepted(selectedReport) ? 'Live Track Location' : 'Waiting for Live GPS'}</span>
                 </button>
               </div>
             </article>
@@ -460,7 +485,7 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-[20px] font-bold leading-8">{report.emergencyType ?? 'Emergency Report'}</h2>
-                <p className="text-[10px] font-bold leading-3 text-[#0c3249]/50">#RPT-001</p>
+                <p className="text-[10px] font-bold leading-3 text-[#0c3249]/50">#{formatReportCode(report)}</p>
               </div>
               <div className="flex items-center gap-2">
                 <span className={`rounded-full border px-3 py-1 text-[10px] font-bold leading-[15px] tracking-[0.5px] ${severityStyles[report.severity]}`}>
@@ -486,7 +511,7 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onTrack, canV
             </div>
             <div className="space-y-2 text-[#0b3850]">
               <p className="flex items-center gap-3 text-[12px] leading-5"><MapPin className="h-4 w-4 shrink-0" />{report.location}</p>
-              <p className="flex items-center gap-3 text-[14px] leading-5"><Clock className="h-4 w-4 shrink-0" />{new Date(report.timestamp).toLocaleString()}</p>
+              <p className="flex items-center gap-3 text-[14px] leading-5"><Clock className="h-4 w-4 shrink-0" />{formatReportDateTime(report.timestamp)}</p>
             </div>
             <button
               onClick={() => setSelectedReportId(report.id)}

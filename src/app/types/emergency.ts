@@ -1,6 +1,6 @@
 export type ServiceType = 'ambulance' | 'fire' | 'police';
 export type ResponseRole = ServiceType | 'disaster-response';
-export type ReportStatus = 'pending' | 'responding' | 'arrived' | 'resolved' | 'done';
+export type ReportStatus = 'pending' | 'responding' | 'arrived' | 'resolved' | 'done' | 'declined';
 
 export interface UnitAssignment {
   unit: string;
@@ -13,7 +13,7 @@ export interface UnitAssignment {
 export interface AuditEntry {
   id: string;
   service: ServiceType;
-  action: 'report_created' | 'unit_dispatched' | 'unit_arrived' | 'report_resolved';
+  action: 'report_created' | 'unit_dispatched' | 'unit_arrived' | 'report_resolved' | 'report_declined';
   label: string;
   timestamp: string;
 }
@@ -30,6 +30,7 @@ export interface PrivacyRegion {
 
 export interface StoredEmergencyReport {
   id: string;
+  reportCode?: string;
   photo: string | null;
   description: string;
   location: string;
@@ -46,7 +47,12 @@ export interface StoredEmergencyReport {
   serviceStatuses?: Partial<Record<ServiceType, ReportStatus>>;
   assignedUnits?: Partial<Record<ServiceType, UnitAssignment>>;
   auditTrail?: AuditEntry[];
+  reporterUid?: string;
+  reporterName?: string;
+  reporterEmail?: string;
   reporterPhone?: string;
+  declineReasons?: Partial<Record<ServiceType, string>>;
+  declinedAt?: string;
   detectedIndicators?: string[];
   privacyRegions?: PrivacyRegion[];
   countryCode?: string;
@@ -82,6 +88,12 @@ export function getServiceStatus(
   return report.serviceStatuses?.[service] ?? report.status;
 }
 
+export function formatReportCode(report: Pick<StoredEmergencyReport, 'id' | 'reportCode'>): string {
+  if (report.reportCode) return report.reportCode;
+  const numericId = report.id.match(/\d+/)?.[0] ?? report.id;
+  return `RPT-${numericId.slice(-3).padStart(3, '0')}`;
+}
+
 export function getOverallStatus(
   statuses: Partial<Record<ServiceType, ReportStatus>>,
   fallback: ReportStatus = 'pending'
@@ -90,6 +102,7 @@ export function getOverallStatus(
   if (!values.length) return fallback;
   if (values.every(status => status === 'resolved')) return 'resolved';
   if (values.every(status => status === 'done')) return 'done';
+  if (values.every(status => status === 'declined')) return 'declined';
   if (
     values.some(status => status === 'arrived') &&
     values.every(status => status === 'arrived' || status === 'resolved')

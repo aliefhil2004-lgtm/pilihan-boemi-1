@@ -2,18 +2,21 @@ import { ArrowLeft, CheckCircle2, Clock, MapPin, MessageSquare, Phone, Radio } f
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { cleanupExpiredReports } from '../services/reportStorage';
-import { getReportServices, getServiceStatus, type ServiceType } from '../types/emergency';
+import { fetchLiveGps } from '../services/liveGps';
+import { formatReportCode, getReportServices, getServiceStatus, type ServiceType } from '../types/emergency';
 import type { PrivacyRegion } from '../types/emergency';
 import type { Language } from '../i18n';
 import { PrivacyImage } from './PrivacyImage';
 import { getServiceDisplayLabel } from '../utils/serviceLabels';
+import { formatReportDateTime } from '../utils/date';
 
 interface EmergencyResultScreenProps {
   emergencyType: string;
-  priority: 'Critical' | 'Medium' | 'Low';
+  priority: 'High' | 'Medium' | 'Low';
   recommendedService: ServiceType;
   recommendedServices: ServiceType[];
   reportId?: string;
+  reportCode?: string;
   submittedAt?: string;
   injuryScale: number;
   location: string;
@@ -25,6 +28,7 @@ interface EmergencyResultScreenProps {
   servicePhoneNumber: string;
   canViewSensitiveMedia: boolean;
   onCancelReport: () => void;
+  onBackHome: () => void;
   onOpenChat: () => void;
   onCallResponder: () => void;
   onViewDetails: () => void;
@@ -37,6 +41,7 @@ export function EmergencyResultScreen({
   priority,
   recommendedServices,
   reportId,
+  reportCode,
   submittedAt,
   injuryScale,
   location,
@@ -48,16 +53,23 @@ export function EmergencyResultScreen({
   servicePhoneNumber,
   canViewSensitiveMedia,
   onCancelReport,
+  onBackHome,
   onOpenChat,
   onCallResponder,
   onViewDetails,
   onFalseReportDone
 }: EmergencyResultScreenProps) {
   const [isAccepted, setIsAccepted] = useState(false);
+  const [canLiveTrack, setCanLiveTrack] = useState(false);
   const [trackingRequested, setTrackingRequested] = useState(false);
   const reportTitle = emergencyType?.trim() || 'Emergency Report';
-  const submittedTime = submittedAt ? new Date(submittedAt) : new Date();
-  const submittedTimeLabel = Number.isNaN(submittedTime.getTime()) ? new Date().toLocaleString() : submittedTime.toLocaleString();
+  const submittedTimeLabel = formatReportDateTime(submittedAt);
+  const priorityClassName =
+    priority === 'High'
+      ? 'border-red-300 bg-red-50 text-red-600'
+      : priority === 'Medium'
+      ? 'border-yellow-300 bg-yellow-50 text-yellow-700'
+      : 'border-blue-300 bg-blue-50 text-blue-700';
 
   useEffect(() => {
     if (!isFalseReport) return undefined;
@@ -68,21 +80,25 @@ export function EmergencyResultScreen({
   useEffect(() => {
     if (!reportId || isFalseReport) {
       setIsAccepted(false);
+      setCanLiveTrack(false);
       return undefined;
     }
 
-    const refreshStatus = () => {
+    const refreshStatus = async () => {
       const report = cleanupExpiredReports().find(item => item.id === reportId);
       if (!report) {
         setIsAccepted(false);
+        setCanLiveTrack(false);
         return;
       }
       const services = getReportServices(report);
-      setIsAccepted(services.some(service => getServiceStatus(report, service) !== 'pending'));
+      setIsAccepted(services.some(service => ['responding', 'arrived', 'resolved', 'done'].includes(getServiceStatus(report, service))));
+      const liveLocations = await Promise.all(services.map(service => fetchLiveGps(service, report.id)));
+      setCanLiveTrack(liveLocations.some(Boolean));
     };
 
-    refreshStatus();
-    const interval = window.setInterval(refreshStatus, 1500);
+    void refreshStatus();
+    const interval = window.setInterval(() => void refreshStatus(), 1500);
     window.addEventListener('storage', refreshStatus);
     window.addEventListener('emergency-reports-updated', refreshStatus);
     return () => {
@@ -94,6 +110,10 @@ export function EmergencyResultScreen({
 
   const notifyWaitingForAcceptance = (feature = 'This feature') => {
     toast.info(`${feature} can be accessed after emergency services accept the report.`);
+  };
+
+  const notifyWaitingForLiveGps = () => {
+    toast.info('Live tracking can be accessed after emergency services share live GPS.');
   };
 
   const handleOpenChat = () => {
@@ -117,7 +137,11 @@ export function EmergencyResultScreen({
 
   const handleLiveTrack = () => {
     if (isFalseReport) return;
-    if (!isAccepted) setTrackingRequested(true);
+    if (!canLiveTrack) {
+      setTrackingRequested(true);
+      notifyWaitingForLiveGps();
+      return;
+    }
     onViewDetails();
   };
 
@@ -125,7 +149,7 @@ export function EmergencyResultScreen({
     <div className="flex h-full flex-col bg-white pb-[104px] text-[#0b3850]">
       <div className="grid h-[94px] grid-cols-[40px_1fr_auto] items-end gap-3 bg-white px-5 pb-5 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
         <button
-          onClick={onCancelReport}
+          onClick={onBackHome}
           className="flex h-10 w-10 items-center justify-center rounded-lg text-[#0b3850] transition hover:bg-slate-50"
           aria-label="Cancel report"
         >
@@ -162,9 +186,9 @@ export function EmergencyResultScreen({
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-[22px] font-extrabold leading-7">{reportTitle}</h2>
-                <p className="mt-1 text-[13px] font-bold text-[#9aa3b1]">#RPT-001</p>
+                <p className="mt-1 text-[13px] font-bold text-[#9aa3b1]">#{reportCode ?? (reportId ? formatReportCode({ id: reportId }) : 'RPT-001')}</p>
               </div>
-              <span className="rounded-full border border-[#f7d36b] bg-[#fff5d8] px-3 py-1.5 text-[11px] font-bold text-[#e4a900]">
+              <span className={`rounded-full border px-3 py-1.5 text-[11px] font-bold ${priorityClassName}`}>
                 {priority}
               </span>
             </div>
@@ -238,12 +262,12 @@ export function EmergencyResultScreen({
         <button
           onClick={handleLiveTrack}
           className={`flex h-[50px] w-full items-center justify-center gap-2 rounded-lg px-3 text-[14px] font-bold text-white shadow-lg transition disabled:cursor-not-allowed disabled:bg-slate-300 ${
-            !isAccepted && trackingRequested ? 'bg-[#8a94a6] hover:bg-[#7b8496]' : 'bg-[#cc1420] hover:bg-red-700'
+            !canLiveTrack && trackingRequested ? 'bg-[#8a94a6] hover:bg-[#7b8496]' : 'bg-[#cc1420] hover:bg-red-700'
           }`}
           disabled={isFalseReport}
         >
           <Radio className="h-[18px] w-[18px] shrink-0" />
-          <span className="truncate">{!isAccepted && trackingRequested ? 'Waiting for Acceptance' : 'Live Track Location'}</span>
+          <span className="truncate">{!canLiveTrack && trackingRequested ? 'Waiting for Live GPS' : 'Live Track Location'}</span>
         </button>
       </footer>
     </div>

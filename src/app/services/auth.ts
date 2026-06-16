@@ -80,7 +80,7 @@ function getLocalDemoServiceLogin(email: string, password: string): ServiceLogin
   const serviceType: ServiceType = 'fire';
   const profile: UserProfile = {
     uid: 'local-demo-service',
-    name: 'Demo Fire Command',
+    name: 'Alex Morgan',
     email: normalizedEmail,
     role: 'service',
     serviceType

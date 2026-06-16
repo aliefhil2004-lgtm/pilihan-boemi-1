@@ -3,8 +3,10 @@ import 'leaflet/dist/leaflet.css';
 import { Circle, MapContainer, Marker, Polyline, Popup, TileLayer } from 'react-leaflet';
 import L from 'leaflet';
 import type { ServiceType } from '../services/ai';
-import { serviceMarkerIcons } from '../utils/mapMarkers';
+import { getReportMarkerIcon, serviceMarkerIcons } from '../utils/mapMarkers';
 import type { DrivingRoute } from '../services/routing';
+import { getVisibleDangerZones } from '../config/dangerZones';
+import type { StoredEmergencyReport } from '../types/emergency';
 
 interface EmergencyMapProps {
   lat: number;
@@ -12,6 +14,8 @@ interface EmergencyMapProps {
   serviceType?: ServiceType;
   serviceLocation?: { lat: number; lng: number };
   route?: DrivingRoute | null;
+  injuryScale?: number;
+  report?: Pick<StoredEmergencyReport, 'emergencyType' | 'description' | 'detectedIndicators'>;
 }
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -30,10 +34,13 @@ export function EmergencyMap({
   lng,
   serviceType = 'ambulance',
   serviceLocation,
-  route
+  route,
+  injuryScale = 5,
+  report
 }: EmergencyMapProps) {
   const tomtomApiKey = import.meta.env.VITE_TOMTOM_API_KEY as string | undefined;
   const routePositions = route?.coordinates.map(([lng, lat]) => [lat, lng] as [number, number]) ?? [];
+  const visibleZones = getVisibleDangerZones(injuryScale);
   const trafficColor = route?.trafficLevel === 'severe'
     ? '#dc2626'
     : route?.trafficLevel === 'heavy'
@@ -73,13 +80,18 @@ export function EmergencyMap({
           </Marker>
         )}
 
-        <Circle
-          center={[lat, lng]}
-          radius={180}
-          pathOptions={{ color: '#dc2626', fillColor: '#dc2626', fillOpacity: 0.12, weight: 2 }}
-        />
+        {visibleZones.map(zone => (
+          <Circle
+            key={zone.label}
+            center={[lat, lng]}
+            radius={zone.radiusMeters}
+            pathOptions={{ color: zone.stroke, fillColor: zone.color, fillOpacity: zone.fillOpacity, weight: 2.5 }}
+          >
+            <Popup>{zone.label} zone around the report location</Popup>
+          </Circle>
+        ))}
 
-        <Marker position={[lat, lng]}>
+        <Marker position={[lat, lng]} icon={getReportMarkerIcon(report ?? { description: '', emergencyType: '', detectedIndicators: [] }, serviceType)}>
           <Popup>
             Emergency Location
           </Popup>

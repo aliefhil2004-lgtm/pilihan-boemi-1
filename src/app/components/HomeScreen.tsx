@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Ambulance, Flame, Shield, AlertCircle, ArrowRight, AlertTriangle, Map, RefreshCw } from 'lucide-react';
 import type { AseanCountry } from '../config/asean';
 import type { StoredEmergencyReport } from '../types/emergency';
+import { getReportServices, getServiceStatus } from '../types/emergency';
 import { cleanupExpiredReports } from '../services/reportStorage';
 import { t, type Language } from '../i18n';
 
@@ -9,15 +10,17 @@ interface HomeScreenProps {
   onEmergencyStart: () => void;
   onServiceSelect: (service: 'ambulance' | 'fire' | 'police') => void;
   onOpenDangerMap: () => void;
+  onCallEmergency: () => void;
   currentLocation: string;
   onChangeLocation: () => void | Promise<void>;
   country: AseanCountry;
   userRole: 'civilian' | 'service';
   serviceType?: 'ambulance' | 'fire' | 'police';
+  serviceDisplayName?: string;
   language: Language;
 }
 
-export function HomeScreen({ onEmergencyStart, onServiceSelect, onOpenDangerMap, currentLocation, onChangeLocation, country, userRole, serviceType, language }: HomeScreenProps) {
+export function HomeScreen({ onEmergencyStart, onServiceSelect, onOpenDangerMap, onCallEmergency, currentLocation, onChangeLocation, country, userRole, serviceType, serviceDisplayName, language }: HomeScreenProps) {
   const tr = (key: Parameters<typeof t>[1]) => t(language, key);
   const [highestPriorityReport, setHighestPriorityReport] = useState<StoredEmergencyReport | null>(null);
   const services = [
@@ -34,7 +37,13 @@ export function HomeScreen({ onEmergencyStart, onServiceSelect, onOpenDangerMap,
 
     const refreshHighestPriority = () => {
       const activeReports = cleanupExpiredReports()
-        .filter(report => report.status !== 'resolved' && (!report.countryCode || report.countryCode === country.code))
+        .filter(report =>
+          report.injuryScale >= 5 &&
+          !['resolved', 'done', 'declined'].includes(report.status) &&
+          (!serviceType || getReportServices(report).includes(serviceType)) &&
+          (!serviceType || !['done', 'declined', 'resolved'].includes(getServiceStatus(report, serviceType))) &&
+          (!report.countryCode || report.countryCode === country.code)
+        )
         .sort((a, b) => b.injuryScale - a.injuryScale);
       setHighestPriorityReport(activeReports[0] ?? null);
     };
@@ -46,13 +55,12 @@ export function HomeScreen({ onEmergencyStart, onServiceSelect, onOpenDangerMap,
       clearInterval(interval);
       window.removeEventListener('emergency-reports-updated', refreshHighestPriority);
     };
-  }, [country.code, userRole]);
+  }, [country.code, serviceType, userRole]);
 
   const priorityLabel =
     !highestPriorityReport ? null :
-    highestPriorityReport.injuryScale >= 8 ? 'CRITICAL' :
-    highestPriorityReport.injuryScale >= 5 ? 'SEVERE' :
-    highestPriorityReport.injuryScale >= 3 ? 'MODERATE' : 'MINOR';
+    highestPriorityReport.injuryScale >= 8 ? 'HIGH' :
+    'MEDIUM';
 
   return (
     <div className="app-scrollbar flex h-full flex-col overflow-y-auto bg-white pb-20 text-[#0b3850]">
@@ -110,12 +118,13 @@ export function HomeScreen({ onEmergencyStart, onServiceSelect, onOpenDangerMap,
                 <span className="mt-2 text-[14px] font-medium leading-[16.5px] text-white/80">{tr('home.tapToStart')}</span>
               </button>
             </div>
-            <a
-              href={`tel:${country.emergency.ambulance}`}
-              className="mb-[58px] mt-[19px] block text-[11px] leading-4 text-[#6a7282] transition hover:text-[#0b3850]"
+            <button
+              type="button"
+              onClick={onCallEmergency}
+              className="mb-[58px] mt-[19px] block w-full text-[11px] leading-4 text-[#6a7282] transition hover:text-[#0b3850]"
             >
               Emergency Hotline: <span className="font-bold text-[#ff6467]">{country.emergency.ambulance}</span>
-            </a>
+            </button>
             <button
               onClick={onOpenDangerMap}
               className="relative mx-4 flex h-[68px] w-[358px] items-center justify-between overflow-hidden rounded-[10px] bg-[#0c324a] p-[10px] text-left text-white transition hover:bg-[#123f59]"
@@ -155,7 +164,7 @@ export function HomeScreen({ onEmergencyStart, onServiceSelect, onOpenDangerMap,
                       <Icon className="h-6 w-6" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-[16px] font-bold leading-6 text-[#0c324a]">{service.name}</p>
+                      <p className="text-[16px] font-bold leading-6 text-[#0c324a]">{userRole === 'service' && serviceDisplayName ? serviceDisplayName : service.name}</p>
                       <p className="text-[14px] leading-5 text-[#42474d]">{service.detail}</p>
                     </div>
                     <ArrowRight className="h-3 w-2 shrink-0 text-[#42474d]/40 transition group-hover:translate-x-0.5" />

@@ -1,11 +1,11 @@
 import { useRef, useState, useEffect } from 'react';
-import { Ambulance, Flame, Shield, Clock, MapPin, AlertTriangle, Phone, Navigation, Filter, Radio, Edit, MessageSquare, ImageOff, ArrowLeft, User, CheckCircle2, Siren, Camera, Upload, ChevronDown, Home } from 'lucide-react';
+import { Ambulance, Flame, Shield, Clock, MapPin, AlertTriangle, Phone, Navigation, Filter, Radio, Edit, MessageSquare, ImageOff, ArrowLeft, User, CheckCircle2, Siren, Camera, Upload, ChevronDown, Home, XCircle } from 'lucide-react';
 import { EmergencyMap } from './EmergencyMap.tsx';
 import { IPhoneStatusBar } from './IPhoneStatusBar';
 import { toast } from 'sonner';
 import { publishLiveGps } from '../services/liveGps';
 import { LocationPicker } from './LocationPicker';
-import { createServiceStatuses, getOverallStatus, getReportServices, getServiceStatus, type AuditEntry, type ServiceType, type StoredEmergencyReport, type UnitAssignment } from '../types/emergency';
+import { createServiceStatuses, formatReportCode, getOverallStatus, getReportServices, getServiceStatus, type AuditEntry, type ReportStatus, type ServiceType, type StoredEmergencyReport, type UnitAssignment } from '../types/emergency';
 import { cleanupExpiredReports, replaceReports } from '../services/reportStorage';
 import type { AseanCountry } from '../config/asean';
 import { citizenContactNumber } from '../config/contacts';
@@ -15,6 +15,7 @@ import type { DrivingRoute } from '../services/routing';
 import { updateIncidentStatus } from '../services/incidentsApi';
 import { PrivacyImage } from './PrivacyImage';
 import { getServiceDisplayLabel } from '../utils/serviceLabels';
+import { formatReportDateTime } from '../utils/date';
 
 type EmergencyReport = Omit<StoredEmergencyReport, 'timestamp'> & {
   timestamp: Date;
@@ -30,34 +31,43 @@ interface EmergencyServiceDashboardProps {
   onCallCitizen: (report: EmergencyReport) => void;
   onBack: () => void;
   country: AseanCountry;
+  currentLocation: string;
+  currentCoords: { lat: number; lng: number };
   canViewSensitiveMedia: boolean;
+  serviceDisplayName?: string;
 }
 
-export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitizen, onBack, country, canViewSensitiveMedia }: EmergencyServiceDashboardProps) {
+export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitizen, onBack, country, currentLocation, currentCoords, canViewSensitiveMedia, serviceDisplayName }: EmergencyServiceDashboardProps) {
   const [reports, setReports] = useState<EmergencyReport[]>([]);
   const [selectedReport, setSelectedReport] = useState<EmergencyReport | null>(null);
   const [detailMode, setDetailMode] = useState<'detail' | 'closure'>('detail');
   const [filter, setFilter] = useState<'all' | 'pending' | 'responding'>('pending');
-  const [isSharingGps, setIsSharingGps] = useState(false);
+  const [isSelectingReports, setIsSelectingReports] = useState(false);
+  const [selectedReportIds, setSelectedReportIds] = useState<string[]>([]);
+  const [declineReason, setDeclineReason] = useState('');
+  const [sharingGpsReportId, setSharingGpsReportId] = useState<string | null>(null);
   const [detailRoute, setDetailRoute] = useState<DrivingRoute | null>(null);
   const [closureOutcome, setClosureOutcome] = useState('resolved');
   const [closureSummary, setClosureSummary] = useState('');
   const [closurePhoto, setClosurePhoto] = useState<string | null>(null);
+  const [isClosureCameraOpen, setIsClosureCameraOpen] = useState(false);
   const closurePhotoInputRef = useRef<HTMLInputElement>(null);
+  const closureVideoRef = useRef<HTMLVideoElement>(null);
+  const closureCameraStreamRef = useRef<MediaStream | null>(null);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [unitCandidates, setUnitCandidates] = useState<UnitCandidate[]>([]);
   const [isCalculatingUnits, setIsCalculatingUnits] = useState(false);
   const [serviceLocation, setServiceLocation] = useState({
-    address: country.center.address,
-    coords: { lat: country.center.lat, lng: country.center.lng }
+    address: currentLocation,
+    coords: currentCoords
   });
 
   useEffect(() => {
     setServiceLocation({
-      address: country.center.address,
-      coords: { lat: country.center.lat, lng: country.center.lng }
+      address: currentLocation,
+      coords: currentCoords
     });
-  }, [country]);
+  }, [currentCoords.lat, currentCoords.lng, currentLocation]);
 
   useEffect(() => {
   const loadReports = () => {
@@ -97,26 +107,26 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
       header: 'linear-gradient(180deg, #679CBC 0%, #A6DBFE 100%)',
       accent: '#679CBC',
       iconBg: 'rgba(255,255,255,0.2)',
-      title: 'Ambulance Command'
+      title: 'Ambulance Response'
     },
     fire: {
       header: 'linear-gradient(180deg, #FF7A1A 0%, #FFB272 100%)',
       accent: '#FF5C00',
       iconBg: 'rgba(255,255,255,0.2)',
-      title: 'Fire Command'
+      title: 'Fire Response'
     },
     police: {
       header: 'linear-gradient(180deg, #2563EB 0%, #93C5FD 100%)',
       accent: '#2563EB',
       iconBg: 'rgba(255,255,255,0.2)',
-      title: 'Police Command'
+      title: 'Police Response'
     }
   };
 
   const ServiceIcon = serviceIcons[serviceType];
   const colors = serviceColors[serviceType];
   const theme = serviceTheme[serviceType];
-  const serviceTitle = theme.title;
+  const serviceTitle = serviceDisplayName?.trim() || theme.title;
   const unitIds = {
     ambulance: serviceUnitConfig.ambulance.unit,
     fire: serviceUnitConfig.fire.unit,
@@ -127,10 +137,11 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
     fire: serviceUnitConfig.fire.prefix,
     police: serviceUnitConfig.police.prefix
   };
-  const serviceReports = reports.filter(r =>
+  const allServiceReports = reports.filter(r =>
     getReportServices(r).includes(serviceType) &&
     (!r.countryCode || r.countryCode === country.code)
   );
+  const serviceReports = allServiceReports.filter(r => !['done', 'declined'].includes(getServiceStatus(r, serviceType)));
 
   const filteredReports = serviceReports.filter(r =>
     filter === 'all'
@@ -139,26 +150,30 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
       ? ['responding', 'arrived'].includes(getServiceStatus(r, serviceType))
       : getServiceStatus(r, serviceType) === filter
   ).sort((a, b) => b.injuryScale - a.injuryScale);
-  const doneReportsCount = serviceReports.filter(r => getServiceStatus(r, serviceType) === 'done').length;
+  const doneReportsCount = allServiceReports.filter(r => getServiceStatus(r, serviceType) === 'done').length;
 
   const getInjuryScaleColor = (scale: number) => {
-    if (scale >= 8) return 'text-red-400';
-    if (scale >= 5) return 'text-orange-400';
-    if (scale >= 3) return 'text-yellow-400';
-    return 'text-green-400';
+    if (scale >= 8) return 'text-red-500';
+    if (scale >= 5) return 'text-yellow-500';
+    return 'text-blue-500';
+  };
+
+  const getInjuryScaleHex = (scale: number) => {
+    if (scale >= 8) return '#dc2626';
+    if (scale >= 5) return '#eab308';
+    return '#2563eb';
   };
 
   const getInjuryScaleLabel = (scale: number) => {
-    if (scale >= 8) return 'CRITICAL';
-    if (scale >= 5) return 'SEVERE';
-    if (scale >= 3) return 'MODERATE';
-    return 'MINOR';
+    if (scale >= 8) return 'HIGH';
+    if (scale >= 5) return 'MEDIUM';
+    return 'LOW';
   };
 
   const getScaleLevelLabel = (scale: number) => {
     if (scale >= 8) return 'High';
     if (scale >= 5) return 'Medium';
-    return 'Small';
+    return 'Low';
   };
 
   const createAuditEntry = (
@@ -175,7 +190,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
   const persistStatusUpdate = (
     updatedReports: EmergencyReport[],
     reportId: string,
-    status: 'responding' | 'arrived' | 'resolved' | 'done',
+    status: ReportStatus,
     assignment?: UnitAssignment
   ) => {
     setReports(updatedReports);
@@ -288,7 +303,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
 
   const updateUnitStatus = (
     report: EmergencyReport,
-    status: 'responding' | 'arrived' | 'resolved' | 'done',
+    status: ReportStatus,
     assignment?: UnitAssignment,
     auditEntry?: AuditEntry
   ) => {
@@ -308,22 +323,89 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
     };
   };
 
-  const toggleGpsSharing = () => {
-    if (isSharingGps) {
-      setIsSharingGps(false);
-      toast.info('Live GPS sharing stopped');
+  const toggleReportSelection = (reportId: string) => {
+    setSelectedReportIds(ids =>
+      ids.includes(reportId) ? ids.filter(id => id !== reportId) : [...ids, reportId]
+    );
+  };
+
+  const cancelReportSelection = () => {
+    setIsSelectingReports(false);
+    setSelectedReportIds([]);
+    setDeclineReason('');
+  };
+
+  const handleDeclineSelectedReports = () => {
+    if (!selectedReportIds.length) {
+      toast.info('Select at least one report to decline');
+      return;
+    }
+    const reason = declineReason.trim();
+    if (!reason) {
+      toast.info('Add a reason before declining selected reports');
+      return;
+    }
+
+    const selected = new Set(selectedReportIds);
+    const declinedAt = new Date().toISOString();
+    const updatedReports = reports.map(report => {
+      if (!selected.has(report.id)) return report;
+      const declinedReport = updateUnitStatus(
+        report,
+        'declined',
+        undefined,
+        createAuditEntry('report_declined', `${serviceLabel} declined this report: ${reason}`)
+      );
+      return {
+        ...declinedReport,
+        declineReasons: {
+          ...declinedReport.declineReasons,
+          [serviceType]: reason
+        },
+        declinedAt
+      };
+    });
+
+    setReports(updatedReports);
+    replaceReports(updatedReports, false);
+    void Promise.all(
+      updatedReports
+        .filter(report => selected.has(report.id))
+        .map(report => updateIncidentStatus(report.id, serviceType, 'declined'))
+    ).catch(() => replaceReports(updatedReports));
+    cancelReportSelection();
+    toast.info('Selected report declined');
+  };
+
+  useEffect(() => {
+    return () => closureCameraStreamRef.current?.getTracks().forEach(track => track.stop());
+  }, []);
+
+  const getGpsTargetReport = (report?: EmergencyReport | null) => report ?? selectedReport;
+
+  const toggleGpsSharing = (report?: EmergencyReport) => {
+    const targetReport = getGpsTargetReport(report);
+    if (!targetReport) {
+      toast.error('Open or select a report before sharing live GPS');
+      return;
+    }
+
+    if (sharingGpsReportId === targetReport.id) {
+      setSharingGpsReportId(null);
+      toast.info(`Live GPS sharing stopped for #${formatReportCode(targetReport)}`);
       return;
     }
 
     const publishFallbackLocation = () => {
       publishLiveGps({
         service: serviceType,
+        reportId: targetReport.id,
         unit: unitIds[serviceType],
         ...serviceLocation.coords,
         updatedAt: Date.now()
       });
-      setIsSharingGps(true);
-      toast.success('Live GPS sharing enabled from service location');
+      setSharingGpsReportId(targetReport.id);
+      toast.success(`Live GPS sharing enabled for #${formatReportCode(targetReport)}`);
     };
 
     if (!navigator.geolocation) {
@@ -335,13 +417,14 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
       position => {
         publishLiveGps({
           service: serviceType,
+          reportId: targetReport.id,
           unit: unitIds[serviceType],
           lat: position.coords.latitude,
           lng: position.coords.longitude,
           updatedAt: Date.now()
         });
-        setIsSharingGps(true);
-        toast.success('Live GPS sharing enabled');
+        setSharingGpsReportId(targetReport.id);
+        toast.success(`Live GPS sharing enabled for #${formatReportCode(targetReport)}`);
       },
       publishFallbackLocation,
       { enableHighAccuracy: true }
@@ -355,6 +438,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
     setServiceLocation({ address, coords });
     publishLiveGps({
       service: serviceType,
+      reportId: selectedReport?.id,
       unit: unitIds[serviceType],
       ...coords,
       updatedAt: Date.now()
@@ -369,12 +453,70 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
     reader.readAsDataURL(file);
   };
 
+  const closeClosureCamera = () => {
+    closureCameraStreamRef.current?.getTracks().forEach(track => track.stop());
+    closureCameraStreamRef.current = null;
+    if (closureVideoRef.current) closureVideoRef.current.srcObject = null;
+    setIsClosureCameraOpen(false);
+  };
+
   useEffect(() => {
-    if (!isSharingGps || !navigator.geolocation) return;
+    if (!isClosureCameraOpen || !closureVideoRef.current || !closureCameraStreamRef.current) return;
+    const video = closureVideoRef.current;
+    video.srcObject = closureCameraStreamRef.current;
+    void video.play().catch(() => undefined);
+  }, [isClosureCameraOpen]);
+
+  const openClosureCamera = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      closurePhotoInputRef.current?.click();
+      toast.error('Camera is not available on this device. Upload a photo instead.');
+      return;
+    }
+
+    try {
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      }
+      closureCameraStreamRef.current = stream;
+      setIsClosureCameraOpen(true);
+    } catch {
+      closurePhotoInputRef.current?.click();
+      toast.error('Unable to open camera. Please allow camera access or upload a photo.');
+    }
+  };
+
+  const takeClosurePhoto = () => {
+    const video = closureVideoRef.current;
+    if (!video?.videoWidth || !video.videoHeight) {
+      toast.error('Camera is still loading');
+      return;
+    }
+
+    const canvas = document.createElement('canvas');
+    const maxDimension = 1600;
+    const scale = Math.min(1, maxDimension / Math.max(video.videoWidth, video.videoHeight));
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+    canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
+    setClosurePhoto(canvas.toDataURL('image/jpeg', 0.82));
+    closeClosureCamera();
+    toast.success('Closure photo captured');
+  };
+
+  useEffect(() => {
+    if (!sharingGpsReportId || !navigator.geolocation) return;
 
     const watchId = navigator.geolocation.watchPosition(
       position => publishLiveGps({
         service: serviceType,
+        reportId: sharingGpsReportId,
         unit: unitIds[serviceType],
         lat: position.coords.latitude,
         lng: position.coords.longitude,
@@ -385,7 +527,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [isSharingGps, serviceType]);
+  }, [serviceType, sharingGpsReportId]);
 
   useEffect(() => {
     if (!selectedReport?.coords) {
@@ -408,11 +550,11 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
   const serviceLabel = getServiceDisplayLabel(serviceType);
   const serviceUnit = unitIds[serviceType].replace('-', ' ');
   const severityLabel = selectedReport ? getInjuryScaleLabel(selectedReport.injuryScale) : 'MEDIUM';
-  const severityBadge = severityLabel === 'CRITICAL'
+  const severityBadge = severityLabel === 'HIGH'
     ? 'border-red-200 bg-red-100 text-red-600'
-    : severityLabel === 'SEVERE'
-    ? 'border-orange-200 bg-orange-100 text-orange-600'
-    : 'border-yellow-300/30 bg-yellow-300/20 text-yellow-500';
+    : severityLabel === 'MEDIUM'
+    ? 'border-yellow-300 bg-yellow-100 text-yellow-700'
+    : 'border-blue-200 bg-blue-100 text-blue-700';
 
   if (selectedReport && detailMode === 'closure') {
     return (
@@ -420,7 +562,14 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
         <IPhoneStatusBar dark={false} />
         <header className="flex h-[111px] shrink-0 items-end bg-white px-6 pb-4 shadow-[0_4px_12px_rgba(0,0,0,0.05)]">
           <div className="flex items-center gap-4">
-            <button onClick={() => setDetailMode('detail')} className="flex h-8 w-8 items-center justify-center rounded-full" aria-label="Back to report detail">
+            <button
+              onClick={() => {
+                setSelectedReport(null);
+                setDetailMode('detail');
+              }}
+              className="flex h-8 w-8 items-center justify-center rounded-full"
+              aria-label="Back to service command"
+            >
               <ArrowLeft className="h-4 w-4" />
             </button>
             <h1 className="text-[18px] font-semibold leading-7">Incident Closure Report</h1>
@@ -431,15 +580,15 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
           <section className="rounded-lg p-4 text-white" style={{ backgroundColor: theme.accent }}>
             <div className="mb-4 flex items-start justify-between">
               <p className="text-[12px] font-semibold uppercase leading-4 tracking-[0.6px]">Incident Information</p>
-              <span className="rounded-full border border-yellow-400 bg-yellow-400 px-3 py-0.5 text-[8px] font-bold uppercase tracking-[0.5px] text-white">
+              <span className={`rounded-full border px-3 py-0.5 text-[8px] font-bold uppercase tracking-[0.5px] ${severityBadge}`}>
                 {severityLabel.toLowerCase()}
               </span>
             </div>
             <h2 className="text-[20px] font-bold leading-8">{selectedReport.emergencyType ?? 'Emergency Report'}</h2>
-            <p className="text-[10px] font-bold leading-3">#RPT-001</p>
+            <p className="text-[10px] font-bold leading-3">#{formatReportCode(selectedReport)}</p>
             <div className="mt-4 space-y-3 text-[14px] leading-5">
               <p className="flex items-center gap-2"><MapPin className="h-4 w-4" />{selectedReport.location}</p>
-              <p className="flex items-center gap-2"><Clock className="h-4 w-4" />{selectedReport.timestamp.toLocaleString()}</p>
+              <p className="flex items-center gap-2"><Clock className="h-4 w-4" />{formatReportDateTime(selectedReport.timestamp)}</p>
             </div>
           </section>
 
@@ -447,10 +596,12 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
             <h2 className="text-[14px] font-bold leading-5">Photo</h2>
             <button
               type="button"
-              onClick={() => closurePhotoInputRef.current?.click()}
+              onClick={openClosureCamera}
               className="flex h-40 w-full flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-[#e5e7eb] bg-[#f9fafb] text-[#9ca3af]"
             >
-              {closurePhoto ? (
+              {isClosureCameraOpen ? (
+                <video ref={closureVideoRef} className="h-full w-full object-cover" autoPlay playsInline muted />
+              ) : closurePhoto ? (
                 <img src={closurePhoto} alt="Closure evidence" className="h-full w-full object-cover" />
               ) : (
                 <>
@@ -469,12 +620,21 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
             />
             <button
               type="button"
-              onClick={() => closurePhotoInputRef.current?.click()}
+              onClick={isClosureCameraOpen ? takeClosurePhoto : () => closurePhotoInputRef.current?.click()}
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#0c3249] px-2 py-3 text-[12px] font-bold leading-4 text-white"
             >
-              <Upload className="h-4 w-4" />
-              Upload Photo
+              {isClosureCameraOpen ? <Camera className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
+              {isClosureCameraOpen ? 'Capture Photo' : 'Upload Photo'}
             </button>
+            {isClosureCameraOpen && (
+              <button
+                type="button"
+                onClick={closeClosureCamera}
+                className="flex w-full items-center justify-center rounded-lg border border-[#e5e7eb] px-2 py-3 text-[12px] font-bold leading-4 text-[#0c3249]"
+              >
+                Cancel Camera
+              </button>
+            )}
           </section>
 
           <section className="space-y-2">
@@ -509,7 +669,6 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
                 <option value="resolved">Resolved</option>
                 <option value="continued-monitoring">Continue Monitoring</option>
                 <option value="transferred">Transferred</option>
-                <option value="false-alarm">False Alarm</option>
               </select>
               <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9ca3af]" />
             </div>
@@ -560,7 +719,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
           <div className="flex h-11 items-start justify-between">
             <div>
               <h2 className="text-[20px] font-bold leading-8">{selectedReport.emergencyType ?? 'Emergency Report'}</h2>
-              <p className="text-[10px] font-bold leading-3 text-[#0c3249]/50">#RPT-001</p>
+              <p className="text-[10px] font-bold leading-3 text-[#0c3249]/50">#{formatReportCode(selectedReport)}</p>
             </div>
             <span className={`rounded-full border px-3 py-1 text-[10px] font-bold uppercase leading-[15px] tracking-[0.5px] ${severityBadge}`}>
               {severityLabel}
@@ -611,19 +770,19 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
             </div>
             <div className="mt-4 space-y-3 border-t border-[#0c3249]/10 pt-3 text-[14px] leading-5">
               <p className="flex items-center gap-2"><MapPin className="h-4 w-4" />{selectedReport.location}</p>
-              <p className="flex items-center gap-2"><Clock className="h-4 w-4" />{selectedReport.timestamp.toLocaleString()}</p>
+              <p className="flex items-center gap-2"><Clock className="h-4 w-4" />{formatReportDateTime(selectedReport.timestamp)}</p>
             </div>
           </section>
 
           <section className="rounded-lg border-l-[5px] bg-white p-4 shadow-[0_4px_12px_rgba(0,0,0,0.10)]" style={{ borderLeftColor: theme.accent }}>
             <div className="flex items-center justify-between text-xs">
               <h3 className="font-semibold uppercase leading-4 tracking-[0.6px] text-[#42474d]">Priority Scale</h3>
-              <span className="font-bold" style={{ color: theme.accent }}>{selectedReport.injuryScale.toFixed(1)}/10</span>
+              <span className="font-bold" style={{ color: getInjuryScaleHex(selectedReport.injuryScale) }}>{selectedReport.injuryScale.toFixed(1)}/10</span>
             </div>
             <div className="mt-3 h-2 overflow-hidden rounded-full border border-[#0c324a]/10 bg-[#eef3f7]">
               <div
                 className="h-full transition-all"
-                style={{ width: `${selectedReport.injuryScale * 10}%`, backgroundColor: theme.accent }}
+                style={{ width: `${selectedReport.injuryScale * 10}%`, backgroundColor: getInjuryScaleHex(selectedReport.injuryScale) }}
               />
             </div>
           </section>
@@ -644,7 +803,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
             </div>
 
             <div className="space-y-2">
-              {(status === 'pending' ? unitCandidates.slice(0, 2) : [assignedUnit].filter(Boolean)).map((candidate, index) => {
+              {(status === 'pending' ? unitCandidates.slice(0, 1) : [assignedUnit].filter(Boolean)).map((candidate, index) => {
                 const unit = candidate?.unit ?? unitIds[serviceType];
                 const distance = candidate?.distanceKm ?? 1.2;
                 return (
@@ -683,6 +842,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
                 serviceType={serviceType}
                 serviceLocation={assignedUnit?.origin ?? serviceLocation.coords}
                 route={detailRoute}
+                report={selectedReport}
               />
             </div>
           )}
@@ -697,13 +857,10 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
             </button>
           )}
           {status === 'responding' && (
-            <div className="grid grid-cols-2 gap-3">
-              <button onClick={toggleGpsSharing} className={`flex items-center justify-center gap-2 rounded-xl p-4 text-[16px] font-bold leading-6 text-white ${isSharingGps ? 'bg-green-600' : 'bg-[#0c3249]'}`}>
-                <Radio className={`h-5 w-5 ${isSharingGps ? 'animate-pulse' : ''}`} />
-                Share Live GPS
-              </button>
-              <button onClick={() => openClosureReport(selectedReport)} className="flex items-center justify-center rounded-xl bg-[#186a17] p-4 text-[16px] font-bold leading-6 text-white">
-                Done
+            <div className="grid grid-cols-1 gap-3">
+              <button onClick={() => toggleGpsSharing()} className={`flex items-center justify-center gap-2 rounded-xl p-4 text-[16px] font-bold leading-6 text-white ${sharingGpsReportId === selectedReport.id ? 'bg-green-600' : 'bg-[#0c3249]'}`}>
+                <Radio className={`h-5 w-5 ${sharingGpsReportId === selectedReport.id ? 'animate-pulse' : ''}`} />
+                {sharingGpsReportId === selectedReport.id ? 'Live GPS ON' : 'Share Live GPS'}
               </button>
             </div>
           )}
@@ -755,8 +912,11 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
           <ArrowLeft className="h-2.5 w-2.5" />
           Back
         </button>
-        <button className="h-7 rounded-lg bg-white/10 px-3 text-[12px] font-semibold leading-4 tracking-[0.6px] text-white">
-          Select
+        <button
+          onClick={() => isSelectingReports ? cancelReportSelection() : setIsSelectingReports(true)}
+          className="h-7 rounded-lg bg-white/10 px-3 text-[12px] font-semibold leading-4 tracking-[0.6px] text-white"
+        >
+          {isSelectingReports ? 'Cancel' : 'Select'}
         </button>
         </div>
         <div className="mb-6 flex items-start gap-4">
@@ -806,13 +966,11 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
           </button>
         </div>
         <button
-          onClick={toggleGpsSharing}
-          className={`hidden h-10 w-full items-center justify-center gap-2 rounded-lg text-xs font-semibold transition ${
-            isSharingGps ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-[#0c324a] text-white hover:bg-[#123f59]'
-          }`}
+          onClick={() => toggleGpsSharing()}
+          className="hidden h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#0c324a] text-xs font-semibold text-white transition hover:bg-[#123f59]"
         >
-          <Radio className={`w-4 h-4 ${isSharingGps ? 'animate-pulse' : ''}`} />
-          {isSharingGps ? 'Live GPS Sharing ON' : 'Share Live GPS'}
+          <Radio className="h-4 w-4" />
+          Share Live GPS
         </button>
         <div className="flex h-14 items-center gap-3 pt-2">
           <button className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-[#0c324a]/10 bg-white" aria-label="Filter reports">
@@ -841,6 +999,28 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
       {/* Reports List */}
       <div className="app-scrollbar flex-1 overflow-y-auto px-5 pb-4 pt-[58px]">
         <div className="mx-auto grid max-w-sm gap-4">
+        {isSelectingReports && (
+          <div className="space-y-3 rounded-2xl border border-[#ef4444]/20 bg-[#fff1f2] p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-[13px] font-semibold text-[#991b1b]">{selectedReportIds.length} selected</span>
+              <button
+                onClick={handleDeclineSelectedReports}
+                disabled={selectedReportIds.length === 0}
+                className="flex h-10 items-center gap-2 rounded-xl bg-[#c11720] px-4 text-[12px] font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                <XCircle className="h-4 w-4" />
+                Decline
+              </button>
+            </div>
+            <textarea
+              value={declineReason}
+              onChange={event => setDeclineReason(event.target.value)}
+              placeholder="Reason for citizen notification..."
+              className="min-h-[74px] w-full resize-none rounded-xl border border-[#fecdd3] bg-white px-3 py-2 text-[13px] font-medium leading-5 text-[#0c324a] outline-none placeholder:text-[#9ca3af]"
+            />
+            <p className="text-[11px] leading-4 text-[#991b1b]/75">This reason will be sent to the citizen, then the report is removed from their report list.</p>
+          </div>
+        )}
         {filteredReports.length === 0 ? (
           <div className="flex h-[277px] flex-col items-center justify-center px-0 pb-20 pt-24 text-center opacity-40">
             <AlertTriangle className="mb-4 h-[57px] w-[66px] text-[#c2c7cd]" />
@@ -850,7 +1030,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
           filteredReports.map((report) => (
             <div
               key={report.id}
-              onClick={() => openReport(report)}
+              onClick={() => isSelectingReports ? toggleReportSelection(report.id) : openReport(report)}
               className="group cursor-pointer overflow-hidden rounded-[24px] border border-[#0c324a]/10 bg-white shadow-[0_4px_10px_rgba(15,23,42,0.10)] transition hover:border-[#0c324a]/25"
             >
               <div className="p-5">
@@ -872,10 +1052,16 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
 
                   <div className="flex-1 min-w-0">
                     <div className="mb-2 flex items-start justify-between gap-2">
-                      <div className="text-[14px] font-bold uppercase leading-5" style={{ color: theme.accent }}>
+                      <div className={`text-[14px] font-bold uppercase leading-5 ${getInjuryScaleColor(report.injuryScale)}`}>
                         {getInjuryScaleLabel(report.injuryScale)}
                       </div>
-                      {getServiceStatus(report, serviceType) === 'done' ? (
+                      {isSelectingReports ? (
+                        <div className={`flex h-7 w-7 items-center justify-center rounded-lg ${
+                          selectedReportIds.includes(report.id) ? 'bg-[#c11720] text-white' : 'bg-slate-200 text-transparent'
+                        }`}>
+                          <span className="h-3 w-3 rounded-full bg-current" />
+                        </div>
+                      ) : getServiceStatus(report, serviceType) === 'done' ? (
                         <div className="rounded-full bg-[#186a17]/10 px-2.5 py-1 text-[11px] font-bold text-[#186a17]">
                           Done
                         </div>
@@ -905,6 +1091,10 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
+                          if (isSelectingReports) {
+                            toggleReportSelection(report.id);
+                            return;
+                          }
                           openReport(report);
                         }}
                         className="flex items-center justify-center gap-2 rounded-2xl bg-[#c11720] py-3 text-[16px] font-bold leading-6 text-white shadow-lg transition hover:opacity-90"
@@ -918,16 +1108,24 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          toggleGpsSharing();
+                          if (isSelectingReports) {
+                            toggleReportSelection(report.id);
+                            return;
+                          }
+                          toggleGpsSharing(report);
                         }}
-                        className={`flex items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-semibold text-white shadow-lg transition hover:opacity-90 ${isSharingGps ? 'bg-green-600' : 'bg-[#0c324a]'}`}
+                        className={`flex items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-semibold text-white shadow-lg transition hover:opacity-90 ${sharingGpsReportId === report.id ? 'bg-green-600' : 'bg-[#0c324a]'}`}
                       >
-                        <Radio className={`h-4 w-4 ${isSharingGps ? 'animate-pulse' : ''}`} />
-                        Share Live GPS
+                        <Radio className={`h-4 w-4 ${sharingGpsReportId === report.id ? 'animate-pulse' : ''}`} />
+                        {sharingGpsReportId === report.id ? 'Live GPS ON' : 'Share Live GPS'}
                       </button>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
+                          if (isSelectingReports) {
+                            toggleReportSelection(report.id);
+                            return;
+                          }
                           openClosureReport(report);
                         }}
                         className="rounded-lg bg-[#186a17] py-2.5 text-xs font-semibold text-white shadow-lg transition hover:opacity-90"
@@ -940,6 +1138,10 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
+                          if (isSelectingReports) {
+                            toggleReportSelection(report.id);
+                            return;
+                          }
                           openClosureReport(report);
                         }}
                         className="rounded-lg bg-emerald-600 py-2.5 text-xs font-semibold text-white shadow-lg transition hover:opacity-90"
@@ -951,6 +1153,10 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
+                          if (isSelectingReports) {
+                            toggleReportSelection(report.id);
+                            return;
+                          }
                           openClosureReport(report);
                         }}
                         className="rounded-lg bg-[#186a17] py-2.5 text-xs font-semibold text-white shadow-lg transition hover:opacity-90"

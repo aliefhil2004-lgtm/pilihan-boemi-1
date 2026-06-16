@@ -11,6 +11,16 @@ interface ChatScreenProps {
   reportId: string;
   userRole: 'civilian' | 'service';
   serviceType?: ServiceType;
+  currentUserName?: string;
+  serviceDisplayName?: string;
+  onOpenCall: (data: {
+    contactName: string;
+    contactRole: string;
+    serviceType?: ServiceType;
+    serviceTypes?: ServiceType[];
+    callerRole: 'civilian' | 'service';
+    phoneNumber?: string;
+  }) => void;
   onBack: () => void;
 }
 
@@ -26,11 +36,14 @@ const serviceColors: Record<ServiceType, string> = {
   police: '#2563EB'
 };
 
-export function ChatScreen({ reportId, userRole, serviceType, onBack }: ChatScreenProps) {
+export function ChatScreen({ reportId, userRole, serviceType, currentUserName, serviceDisplayName, onOpenCall, onBack }: ChatScreenProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState('');
   const [reporterPhone, setReporterPhone] = useState<string | null>(null);
+  const [reporterName, setReporterName] = useState('Mytha Floyen');
   const activeService = serviceType ?? 'ambulance';
+  const responderName = serviceDisplayName?.trim() || serviceNames[activeService];
+  const chatTitle = userRole === 'civilian' ? responderName : reporterName;
   const counterpartyPhone = userRole === 'civilian'
     ? getServiceContactNumber(activeService)
     : reporterPhone ?? citizenContactNumber;
@@ -38,7 +51,9 @@ export function ChatScreen({ reportId, userRole, serviceType, onBack }: ChatScre
   useEffect(() => {
     const refresh = () => {
       setMessages(getMessages(reportId));
-      setReporterPhone(cleanupExpiredReports().find(report => report.id === reportId)?.reporterPhone ?? null);
+      const report = cleanupExpiredReports().find(item => item.id === reportId);
+      setReporterPhone(report?.reporterPhone ?? null);
+      setReporterName(report?.reporterName || 'Mytha Floyen');
     };
     refresh();
     const stopFirebaseSync = startChatSync(reportId);
@@ -59,7 +74,7 @@ export function ChatScreen({ reportId, userRole, serviceType, onBack }: ChatScre
     sendMessage({
       reportId,
       sender: userRole,
-      senderLabel: userRole === 'civilian' ? 'Civilian Reporter' : serviceNames[activeService],
+      senderLabel: userRole === 'civilian' ? (currentUserName || 'Civilian Reporter') : responderName,
       text: text.trim()
     });
     setText('');
@@ -73,7 +88,7 @@ export function ChatScreen({ reportId, userRole, serviceType, onBack }: ChatScre
             <ArrowLeft className="h-4 w-4" />
           </button>
           <div className="min-w-0">
-            <h1 className="truncate text-[20px] font-semibold leading-7 tracking-[-1px]">Mytha Floyen</h1>
+            <h1 className="truncate text-[20px] font-semibold leading-7 tracking-[-1px]">{chatTitle}</h1>
             <p className="flex items-center gap-2 text-[12px] font-medium uppercase leading-4 tracking-[0.3px] text-[#0c3249]/50">
               <span className="h-2 w-2 rounded-full bg-[#4caf50]" />
               Active now
@@ -82,8 +97,15 @@ export function ChatScreen({ reportId, userRole, serviceType, onBack }: ChatScre
         </div>
         <button
           onClick={() => {
-            toast.success(userRole === 'civilian' ? `Calling ${serviceNames[activeService]}` : `Calling citizen at ${counterpartyPhone}`);
-            window.location.href = `tel:${counterpartyPhone}`;
+            toast.success(userRole === 'civilian' ? `Calling ${responderName}` : `Calling ${reporterName}`);
+            onOpenCall({
+              contactName: userRole === 'civilian' ? responderName : reporterName,
+              contactRole: userRole === 'civilian' ? responderName : 'Civilian',
+              serviceType: activeService,
+              serviceTypes: [activeService],
+              callerRole: userRole,
+              phoneNumber: counterpartyPhone
+            });
           }}
           className="flex h-10 w-10 items-center justify-center rounded-full bg-[#0c3249] text-white"
           aria-label={userRole === 'civilian' ? 'Call responder' : 'Call citizen reporter'}
@@ -110,7 +132,7 @@ export function ChatScreen({ reportId, userRole, serviceType, onBack }: ChatScre
             <div className="flex justify-end">
               <div className="max-w-[286px]">
                 <div className="rounded-[24px_24px_2px_24px] px-4 py-3 text-right text-[14px] leading-5 text-white" style={{ backgroundColor: serviceColors[activeService] }}>
-                  Received, Mytha. {serviceNames[activeService]} responders have been dispatched. ETA is <span className="font-extrabold text-[#c11720]">3 minutes.</span>
+                  Received, {reporterName}. {responderName} responders have been dispatched. ETA is <span className="font-extrabold text-[#c11720]">3 minutes.</span>
                 </div>
                 <p className="mt-1 flex justify-end gap-1 pr-1 text-[10px] font-semibold leading-[15px] text-[#94a3b8]">
                   18:31 WIB <Check className="h-3 w-3" />
@@ -121,7 +143,7 @@ export function ChatScreen({ reportId, userRole, serviceType, onBack }: ChatScre
         )}
         {messages.map(message => {
           const isMine = message.sender === userRole && (
-            userRole === 'civilian' || message.senderLabel === serviceNames[activeService]
+            userRole === 'civilian' || message.senderLabel === responderName
           );
           return (
             <div key={message.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>

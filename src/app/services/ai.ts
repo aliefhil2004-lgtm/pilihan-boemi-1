@@ -8,7 +8,7 @@ export type { ServiceType } from '../types/emergency';
 
 export interface AIResult {
   type: string;
-  severity: 'Critical' | 'High' | 'Medium' | 'Low';
+  severity: 'High' | 'Medium' | 'Low';
   severityScore: number;
   service: ServiceType;
   services: ServiceType[];
@@ -314,10 +314,21 @@ function hasSmallDangerousAnimalContext(value: string) {
 }
 
 function severityFromScore(score: number): AIResult['severity'] {
-  if (score >= 8) return 'Critical';
-  if (score >= 6) return 'High';
+  if (score >= 8) return 'High';
   if (score >= 4) return 'Medium';
   return 'Low';
+}
+
+function isMedicalOnlyIncident(text: string, type: string) {
+  const lower = `${type} ${text}`.toLowerCase();
+  const medicalSignal = /(injury|injured|hurt|bleeding|pendarahan|luka|patah|unconscious|unresponsive|sesak napas|not breathing|cardiac arrest|heart attack|stroke|kecelakaan|accident)/i;
+  const crossAgencySignal = /(fire|smoke|kebakaran|asap|explosion|ledakan|gas|hazmat|chemical|kimia|police|crime|assault|weapon|gun|armed|terror|bom|mass casualty|banyak korban|building collapse|gedung runtuh|flood|banjir|earthquake|gempa|landslide|longsor|tsunami)/i;
+  return medicalSignal.test(lower) && !crossAgencySignal.test(lower);
+}
+
+function normalizeMedicalOnlyPlan<T extends ServiceType | ResponseRole>(items: T[], text: string, type: string): T[] {
+  if (!isMedicalOnlyIncident(text, type)) return [...new Set(items)];
+  return items.includes('ambulance' as T) ? ['ambulance' as T] : [...new Set(items)];
 }
 
 function getDisasterResponsePlan(type: string, score: number): ResponseRole[] {
@@ -784,9 +795,9 @@ function fuseSignals(signals: Signal[], text: string, imageAnalysisFailed: boole
           'Image-only report resolved directly from vision analysis',
           ...(imageAnalysisFailed ? ['Photo uploaded, but image assessment was unavailable'] : [])
         ],
-        services: [...new Set([strongestVision.service, ...detectRequiredServices(text, strongestVision.service, strongestVision.score)])],
-        responsePlan,
-        priorityRole: responsePlan[0] ?? strongestVision.service,
+        services: normalizeMedicalOnlyPlan([...new Set([strongestVision.service, ...detectRequiredServices(text, strongestVision.service, strongestVision.score)])], text, strongestVision.type),
+        responsePlan: normalizeMedicalOnlyPlan(responsePlan, text, strongestVision.type),
+        priorityRole: normalizeMedicalOnlyPlan(responsePlan, text, strongestVision.type)[0] ?? strongestVision.service,
         isFalseReport: false,
         falseReportReason: undefined
       };
@@ -795,7 +806,7 @@ function fuseSignals(signals: Signal[], text: string, imageAnalysisFailed: boole
 
   // If only vision is weakly suggesting medical, keep it conservative.
   if (!hasInvisibleEmergency && !hasStrongTextSignal && !hasStrongVisionSignal) {
-    const safeService = signals.find(signal => signal.source !== 'vision' && signal.score >= 3)?.service ?? (strongestVision?.service ?? 'fire');
+    const safeService = signals.find(signal => signal.source !== 'vision' && signal.score >= 3)?.service ?? (strongestVision?.service ?? 'ambulance');
     const safeType = signals.find(signal => signal.source !== 'vision' && signal.score >= 3)?.type ?? 'General Emergency';
     const responsePlan = /tsunami|volcanic eruption|earthquake|severe storm|landslide|flood/i.test(safeType)
       ? getDisasterResponsePlan(safeType, Math.max(1, Math.min(10, Math.round(weightedScore))))
@@ -840,18 +851,19 @@ function fuseSignals(signals: Signal[], text: string, imageAnalysisFailed: boole
 
   const services = detectRequiredServices(text, winningService, finalScore);
   for (const service of serviceLabels) services.push(service);
-  const responsePlan = /tsunami|volcanic eruption|earthquake|severe storm|landslide|flood/i.test(strongestSignal?.type ?? '')
+  const incidentType = strongestSignal?.type ?? 'General Emergency';
+  const responsePlan = /tsunami|volcanic eruption|earthquake|severe storm|landslide|flood/i.test(incidentType)
     ? getDisasterResponsePlan(strongestSignal?.type ?? 'General Emergency', finalScore)
-    : getCrisisResponsePlan(strongestSignal?.type ?? 'General Emergency', winningService, finalScore, text);
+    : getCrisisResponsePlan(incidentType, winningService, finalScore, text);
 
   return {
-    type: strongestSignal?.type ?? 'General Emergency',
+    type: incidentType,
     service: winningService,
     score: finalScore,
     indicators: [...new Set(indicators)],
-    services: [...new Set(services)],
-    responsePlan,
-    priorityRole: responsePlan[0] ?? winningService,
+    services: normalizeMedicalOnlyPlan(services, text, incidentType),
+    responsePlan: normalizeMedicalOnlyPlan(responsePlan, text, incidentType),
+    priorityRole: normalizeMedicalOnlyPlan(responsePlan, text, incidentType)[0] ?? winningService,
     isFalseReport,
     falseReportReason: isFalseReport ? 'No clear emergency evidence was detected in the photo or text.' : undefined
   };

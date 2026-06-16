@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { FireMapView } from './FireMapView';
 import { Ambulance, Flame, Shield, ArrowLeft, MapPinned, Video, ExternalLink, X, AlertTriangle } from 'lucide-react';
 import { cleanupExpiredReports } from '../services/reportStorage';
-import { getReportServices, type StoredEmergencyReport } from '../types/emergency';
+import { getReportServices, getServiceStatus, type StoredEmergencyReport } from '../types/emergency';
 import { indonesiaPublicCctv, type PublicCctvCamera } from '../config/cctv';
 import { t, type Language } from '../i18n';
 
@@ -26,7 +26,7 @@ export function FireMapScreen({ userLocation, countryCode, onBack, language }: F
   useEffect(() => {
     const refresh = () => {
       const nextReports = cleanupExpiredReports().filter(
-        report => report.status !== 'resolved' && (!report.countryCode || report.countryCode === countryCode)
+        report => !['resolved', 'done', 'declined'].includes(report.status) && (!report.countryCode || report.countryCode === countryCode)
       );
       setReports(currentReports =>
         JSON.stringify(currentReports) === JSON.stringify(nextReports)
@@ -44,7 +44,17 @@ export function FireMapScreen({ userLocation, countryCode, onBack, language }: F
   }, [countryCode]);
 
   const countByService = (service: 'ambulance' | 'fire' | 'police') =>
-    reports.filter(report => getReportServices(report).includes(service)).length;
+    reports.filter(report =>
+      getReportServices(report).includes(service) &&
+      !['resolved', 'done', 'declined'].includes(getServiceStatus(report, service))
+    ).length;
+  const hasDangerZoneReports = reports.some(report => {
+    const services = getReportServices(report);
+    return services.some(service =>
+      (service === 'fire' || service === 'police') &&
+      !['resolved', 'done', 'declined'].includes(getServiceStatus(report, service))
+    );
+  });
 
   return (
     <div className="flex h-full flex-col bg-white text-[#0b3850]">
@@ -69,18 +79,19 @@ export function FireMapScreen({ userLocation, countryCode, onBack, language }: F
           onCameraSelect={setSelectedCamera}
           liveGpsByService={{}}
         />
+        {hasDangerZoneReports && (
         <div className="absolute right-5 top-6 z-10 rounded-2xl bg-[#30354f]/95 p-3 text-[12px] text-white shadow-lg backdrop-blur">
           <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold text-white">
             <AlertTriangle className="h-4 w-4 text-red-400" />
             {tr('map.dangerZones')}
           </div>
           <div className="space-y-1.5 text-gray-200">
-            <div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-red-600/90" /> {tr('map.critical')}</div>
-            <div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-orange-500/90" /> {tr('map.high')}</div>
+            <div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-red-600/90" /> {tr('map.high')}</div>
             <div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-yellow-500/90" /> {tr('map.yellow')}</div>
-            <div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-green-500/90" /> {tr('map.watch')}</div>
+            <div className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-blue-600/90" /> {tr('map.watch')}</div>
           </div>
         </div>
+        )}
         <div className="absolute left-5 top-6 z-10 rounded-2xl bg-slate-950/85 px-3 py-2 text-[12px] text-white shadow-lg backdrop-blur">
           <span className={trafficEnabled ? 'text-emerald-300' : 'text-yellow-300'}>
             {tr('map.traffic')}: {trafficEnabled ? tr('map.live') : tr('map.apiKeyNeeded')}
@@ -114,13 +125,13 @@ export function FireMapScreen({ userLocation, countryCode, onBack, language }: F
                 <p className="text-[22px] font-bold leading-6 text-white">{countByService('police')}</p>
               </div>
         </div>
-        <div className="mt-3 flex items-center justify-center gap-4 text-[11px] text-gray-300">
-          <span>{reports.length} active reports</span>
-          <span className="flex items-center gap-1.5 text-red-300">
-            <AlertTriangle className="h-3.5 w-3.5" /> {reports.filter(report => report.injuryScale >= 8).length} critical zones
+        <div className="mt-3 grid grid-cols-3 gap-2 rounded-full bg-white/95 px-3 py-2 text-[10px] font-bold text-[#0b3850] shadow-[0_10px_28px_rgba(15,23,42,0.22)] backdrop-blur">
+          <span className="flex items-center justify-center whitespace-nowrap">{reports.length} active reports</span>
+          <span className="flex items-center justify-center gap-1 text-[#ef4444]">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> {reports.filter(report => report.injuryScale >= 8).length} high zones
           </span>
-          <span className="flex items-center gap-1.5 text-emerald-300">
-            <Video className="h-3.5 w-3.5" /> {cameras.length} public CCTV
+          <span className="flex items-center justify-center gap-1 text-[#10b981]">
+            <Video className="h-3.5 w-3.5 shrink-0" /> {cameras.length} public CCTV
           </span>
         </div>
       </div>

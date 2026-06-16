@@ -3,6 +3,7 @@ import { fetchLiveGpsFromFirebase, syncLiveGpsToFirebase } from './firebaseSync'
 
 export interface LiveGpsLocation {
   service: ServiceType;
+  reportId?: string;
   unit: string;
   lat: number;
   lng: number;
@@ -11,32 +12,37 @@ export interface LiveGpsLocation {
 
 const STORAGE_KEY = 'emergencyServiceLocations';
 
-export function readLiveGps(service: ServiceType): LiveGpsLocation | null {
-  const locations = JSON.parse(
-    localStorage.getItem(STORAGE_KEY) || '{}'
-  ) as Partial<Record<ServiceType, LiveGpsLocation>>;
-
-  return locations[service] ?? null;
+function locationKey(service: ServiceType, reportId?: string) {
+  return reportId ? `${service}:${reportId}` : service;
 }
 
-export async function fetchLiveGps(service: ServiceType): Promise<LiveGpsLocation | null> {
-  const firebaseLocation = await fetchLiveGpsFromFirebase(service);
-  if (firebaseLocation) return firebaseLocation;
+export function readLiveGps(service: ServiceType, reportId?: string): LiveGpsLocation | null {
+  const locations = JSON.parse(
+    localStorage.getItem(STORAGE_KEY) || '{}'
+  ) as Record<string, LiveGpsLocation>;
+
+  return locations[locationKey(service, reportId)] ?? (!reportId ? locations[service] : null) ?? null;
+}
+
+export async function fetchLiveGps(service: ServiceType, reportId?: string): Promise<LiveGpsLocation | null> {
+  const firebaseLocation = await fetchLiveGpsFromFirebase(service, reportId);
+  if (firebaseLocation && (!reportId || firebaseLocation.reportId === reportId)) return firebaseLocation;
   try {
     const response = await fetch(`/api/live-gps/${service}`);
-    if (!response.ok) return readLiveGps(service);
-    return await response.json() as LiveGpsLocation;
+    if (!response.ok) return readLiveGps(service, reportId);
+    const apiLocation = await response.json() as LiveGpsLocation;
+    return !reportId || apiLocation.reportId === reportId ? apiLocation : readLiveGps(service, reportId);
   } catch {
-    return readLiveGps(service);
+    return readLiveGps(service, reportId);
   }
 }
 
 export function publishLiveGps(location: LiveGpsLocation) {
   const locations = JSON.parse(
     localStorage.getItem(STORAGE_KEY) || '{}'
-  ) as Partial<Record<ServiceType, LiveGpsLocation>>;
+  ) as Record<string, LiveGpsLocation>;
 
-  locations[location.service] = location;
+  locations[locationKey(location.service, location.reportId)] = location;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(locations));
   window.dispatchEvent(new Event('emergency-gps-updated'));
   void syncLiveGpsToFirebase(location);
@@ -53,18 +59,19 @@ export function publishLiveGps(location: LiveGpsLocation) {
 export function publishLiveGpsSilent(location: LiveGpsLocation) {
   const locations = JSON.parse(
     localStorage.getItem(STORAGE_KEY) || '{}'
-  ) as Partial<Record<ServiceType, LiveGpsLocation>>;
+  ) as Record<string, LiveGpsLocation>;
 
-  locations[location.service] = location;
+  locations[locationKey(location.service, location.reportId)] = location;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(locations));
   window.dispatchEvent(new Event('emergency-gps-updated'));
   void syncLiveGpsToFirebase(location);
 }
 
-export async function startAutoLiveGps(service: ServiceType, unit: string, onUpdate?: (location: LiveGpsLocation) => void) {
+export async function startAutoLiveGps(service: ServiceType, unit: string, onUpdate?: (location: LiveGpsLocation) => void, reportId?: string) {
   const pushLocation = async (lat: number, lng: number) => {
     const location: LiveGpsLocation = {
       service,
+      reportId,
       unit,
       lat,
       lng,
@@ -89,7 +96,7 @@ export async function startAutoLiveGps(service: ServiceType, unit: string, onUpd
 
   const started = await updateFromNavigator();
   if (!started) {
-    const fallback = readLiveGps(service);
+    const fallback = readLiveGps(service, reportId);
     if (fallback) {
       onUpdate?.(fallback);
       return () => {};

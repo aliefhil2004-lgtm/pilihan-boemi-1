@@ -6,9 +6,10 @@ import { t, type Language } from '../i18n';
 import { analyzeEmergencyImage } from '../roboflow';
 
 interface EmergencyReportScreenProps {
-  onSubmit: (data: { photo: string | null; description: string; location: string }) => void;
+  onSubmit: (data: { photo: string | null; description: string; location: string; coords?: { lat: number; lng: number } }) => void;
   onBack?: () => void;
   defaultLocation?: string;
+  defaultCoords?: { lat: number; lng: number };
   language: Language;
 }
 
@@ -72,10 +73,11 @@ function preparePhotoForAnalysis(file: File): Promise<string> {
   });
 }
 
-export function EmergencyReportScreen({ onSubmit, onBack, defaultLocation, language }: EmergencyReportScreenProps) {
+export function EmergencyReportScreen({ onSubmit, onBack, defaultLocation, defaultCoords, language }: EmergencyReportScreenProps) {
   const [photo, setPhoto] = useState<string | null>(null);
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState(defaultLocation || '');
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | undefined>(defaultCoords);
   const [isLocating, setIsLocating] = useState(!defaultLocation);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [liveDetection, setLiveDetection] = useState<LiveCameraDetection | null>(null);
@@ -92,7 +94,9 @@ export function EmergencyReportScreen({ onSubmit, onBack, defaultLocation, langu
     if (!defaultLocation && navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         async (position) => {
-          setLocation(await reverseGeocode(position.coords.latitude, position.coords.longitude));
+          const nextCoords = { lat: position.coords.latitude, lng: position.coords.longitude };
+          setCoords(nextCoords);
+          setLocation(await reverseGeocode(nextCoords.lat, nextCoords.lng));
           setIsLocating(false);
           toast.success(tr('report.locationDetected'));
         },
@@ -107,6 +111,13 @@ export function EmergencyReportScreen({ onSubmit, onBack, defaultLocation, langu
   useEffect(() => {
     return () => cameraStreamRef.current?.getTracks().forEach(track => track.stop());
   }, []);
+
+  useEffect(() => {
+    if (!isCameraOpen || !videoRef.current || !cameraStreamRef.current) return;
+    const video = videoRef.current;
+    video.srcObject = cameraStreamRef.current;
+    void video.play().catch(() => undefined);
+  }, [isCameraOpen]);
 
   useEffect(() => {
     if (!isCameraOpen) return undefined;
@@ -154,21 +165,25 @@ export function EmergencyReportScreen({ onSubmit, onBack, defaultLocation, langu
   const openCamera = async () => {
     if (!navigator.mediaDevices?.getUserMedia) {
       toast.error(tr('report.cameraUnsupported'));
+      fileInputRef.current?.click();
       return;
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
-        audio: false
-      });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      }
       cameraStreamRef.current = stream;
       setIsCameraOpen(true);
-      requestAnimationFrame(() => {
-        if (videoRef.current) videoRef.current.srcObject = stream;
-      });
     } catch {
       toast.error(tr('report.cameraFailed'));
+      fileInputRef.current?.click();
     }
   };
 
@@ -223,7 +238,8 @@ export function EmergencyReportScreen({ onSubmit, onBack, defaultLocation, langu
       onSubmit({
         photo,
         description: trimmedDescription || tr('report.defaultDescription'),
-        location
+        location,
+        coords
       })
     ).catch(() => {
       setIsSubmitting(false);
@@ -268,7 +284,9 @@ export function EmergencyReportScreen({ onSubmit, onBack, defaultLocation, langu
                 setIsLocating(true);
                 navigator.geolocation.getCurrentPosition(
                   async (position) => {
-                    setLocation(await reverseGeocode(position.coords.latitude, position.coords.longitude, location || 'Current GPS location'));
+                    const nextCoords = { lat: position.coords.latitude, lng: position.coords.longitude };
+                    setCoords(nextCoords);
+                    setLocation(await reverseGeocode(nextCoords.lat, nextCoords.lng, location || 'Current GPS location'));
                     setIsLocating(false);
                     toast.success(tr('report.locationUpdated'));
                   },
@@ -367,6 +385,7 @@ export function EmergencyReportScreen({ onSubmit, onBack, defaultLocation, langu
                 ref={fileInputRef}
                 type="file"
                 accept={`${ACCEPTED_IMAGE_EXTENSIONS},${ACCEPTED_IMAGE_TYPES.join(',')}`}
+                capture="environment"
                 onChange={handlePhotoUpload}
                 className="hidden"
               />

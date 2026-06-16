@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Ambulance, ArrowLeft, Flame, Grid3X3, LockKeyhole, MicOff, PhoneOff, Shield, User, Volume2 } from 'lucide-react';
 import type { ServiceType } from '../types/emergency';
 import { getServiceDisplayLabel } from '../utils/serviceLabels';
@@ -39,22 +39,30 @@ function uniqueServices(serviceTypes?: ServiceType[], fallback?: ServiceType) {
   return [...new Set(serviceTypes?.length ? serviceTypes : fallback ? [fallback] : ['fire' as ServiceType])];
 }
 
+function formatDuration(seconds: number) {
+  const minutes = Math.floor(seconds / 60).toString().padStart(2, '0');
+  const remainingSeconds = (seconds % 60).toString().padStart(2, '0');
+  return `${minutes}:${remainingSeconds}`;
+}
+
 export function CallScreen({ contactName, contactRole, serviceType, serviceTypes, callerRole, phoneNumber, onBack }: CallScreenProps) {
-  const hasDialedRef = useRef(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isKeypadOpen, setIsKeypadOpen] = useState(false);
+  const [isSpeakerOn, setIsSpeakerOn] = useState(false);
   const activeServices = useMemo(() => uniqueServices(serviceTypes, serviceType), [serviceType, serviceTypes]);
   const responderLabels = activeServices.map(service => getServiceDisplayLabel(service)).join(' & ');
   const title = callerRole === 'civilian' ? 'Emergency Dispatch' : contactName;
   const subtitle = callerRole === 'civilian' ? responderLabels : contactRole;
   const groupMembers = callerRole === 'civilian' ? ['Citizen', ...activeServices.map(service => getServiceDisplayLabel(service))] : [contactName, contactRole];
+  const keypadKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'];
 
   useEffect(() => {
-    if (!phoneNumber || hasDialedRef.current) return;
-    hasDialedRef.current = true;
-    const timer = window.setTimeout(() => {
-      window.location.href = `tel:${phoneNumber}`;
-    }, 350);
-    return () => window.clearTimeout(timer);
-  }, [phoneNumber]);
+    const timer = window.setInterval(() => {
+      setElapsedSeconds(seconds => seconds + 1);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   return (
     <div className="absolute inset-0 z-[90] flex h-full flex-col overflow-hidden bg-[linear-gradient(180deg,#08344f_0%,#6da5c4_100%)] px-8 pb-8 pt-[46px] text-white">
@@ -100,21 +108,47 @@ export function CallScreen({ contactName, contactRole, serviceType, serviceTypes
         <div className="mt-3 max-w-[285px] text-center text-[11px] font-semibold leading-4 text-white/65">
           Group call: {groupMembers.join(', ')}
         </div>
+        {phoneNumber && (
+          <div className="mt-2 text-center text-[11px] font-semibold leading-4 text-white/55">
+            In-app call to {phoneNumber}
+          </div>
+        )}
         <div className="mt-5 rounded-full border border-white/45 bg-white/10 px-7 py-2 text-[18px] font-bold leading-6 tracking-[3px] shadow-inner">
-          00:12
+          {formatDuration(elapsedSeconds)}
         </div>
       </div>
 
+      {isKeypadOpen && (
+        <div className="relative mx-auto mb-6 grid w-[224px] grid-cols-3 gap-3 rounded-[24px] border border-white/20 bg-white/10 p-4 shadow-[0_16px_34px_rgba(0,0,0,0.16)] backdrop-blur-sm">
+          {keypadKeys.map(key => (
+            <button
+              key={key}
+              type="button"
+              className="flex h-12 w-12 items-center justify-center rounded-full border border-white/25 bg-white/15 text-[21px] font-bold text-white active:scale-95"
+              aria-label={`Keypad ${key}`}
+            >
+              {key}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="relative grid grid-cols-3 gap-10">
         {[
-          { label: 'Mute', icon: MicOff },
-          { label: 'Keypad', icon: Grid3X3 },
-          { label: 'Speaker', icon: Volume2 }
+          { label: 'Mute', icon: MicOff, active: isMuted, onClick: () => setIsMuted(value => !value) },
+          { label: 'Keypad', icon: Grid3X3, active: isKeypadOpen, onClick: () => setIsKeypadOpen(value => !value) },
+          { label: 'Speaker', icon: Volume2, active: isSpeakerOn, onClick: () => setIsSpeakerOn(value => !value) }
         ].map(item => {
           const Icon = item.icon;
           return (
-            <button key={item.label} className={`flex flex-col items-center gap-3 ${item.label === 'Speaker' ? 'text-[#0b3850]' : 'text-white/70'}`}>
-              <span className={`flex h-16 w-16 items-center justify-center rounded-full border border-white/35 ${item.label === 'Speaker' ? 'bg-[#1e5a78]/80' : 'bg-white/10'}`}>
+            <button
+              key={item.label}
+              type="button"
+              onClick={item.onClick}
+              className={`flex flex-col items-center gap-3 transition active:scale-95 ${item.active ? 'text-white' : 'text-white/70'}`}
+              aria-pressed={item.active}
+            >
+              <span className={`flex h-16 w-16 items-center justify-center rounded-full border border-white/35 ${item.active ? 'bg-[#0b3850]/80 shadow-[0_8px_18px_rgba(0,0,0,0.16)]' : 'bg-white/10'}`}>
                 <Icon className="h-6 w-6 text-white" />
               </span>
               <span className="text-[13px] font-medium leading-5">{item.label}</span>

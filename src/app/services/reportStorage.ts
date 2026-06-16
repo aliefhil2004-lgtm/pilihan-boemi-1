@@ -12,6 +12,16 @@ function readReports(): StoredEmergencyReport[] {
   return JSON.parse(localStorage.getItem(REPORT_STORAGE_KEY) || '[]');
 }
 
+export function createNextReportCode(): string {
+  const reports = readReports();
+  const maxNumber = reports.reduce((max, report) => {
+    const value = report.reportCode?.match(/RPT-(\d+)/)?.[1];
+    return value ? Math.max(max, Number(value)) : max;
+  }, 0);
+
+  return `RPT-${String(maxNumber + 1).padStart(3, '0')}`;
+}
+
 export function cleanupExpiredReports(now = Date.now()): StoredEmergencyReport[] {
   const reports = readReports();
   const activeReports = reports.filter(report => {
@@ -37,11 +47,15 @@ export function cleanupExpiredReports(now = Date.now()): StoredEmergencyReport[]
 
 export function saveReport(report: StoredEmergencyReport) {
   const reports = cleanupExpiredReports();
-  localStorage.setItem(REPORT_STORAGE_KEY, JSON.stringify([report, ...reports]));
+  const nextReport = {
+    ...report,
+    reportCode: report.reportCode ?? createNextReportCode()
+  };
+  localStorage.setItem(REPORT_STORAGE_KEY, JSON.stringify([nextReport, ...reports]));
   window.dispatchEvent(new Event('emergency-reports-updated'));
-  void createIncident(report)
-    .then(() => syncReportToFirebase(report))
-    .catch(() => syncReportToFirebase(report));
+  void createIncident(nextReport)
+    .then(() => syncReportToFirebase(nextReport))
+    .catch(() => syncReportToFirebase(nextReport));
 }
 
 export function replaceReports(reports: StoredEmergencyReport[], syncCloud = true) {

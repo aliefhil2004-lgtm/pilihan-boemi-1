@@ -99,16 +99,17 @@ export function startChatSync(reportId: string) {
 export async function syncLiveGpsToFirebase(location: LiveGpsLocation) {
   if (!firestore) return;
   try {
-    await setDoc(doc(firestore, 'liveGps', location.service), location);
+    const key = location.reportId ? `${location.service}:${location.reportId}` : location.service;
+    await setDoc(doc(firestore, 'liveGps', key), location);
   } catch (error) {
     console.warn('Unable to sync live GPS to Firebase.', error);
   }
 }
 
-export async function fetchLiveGpsFromFirebase(service: LiveGpsLocation['service']) {
+export async function fetchLiveGpsFromFirebase(service: LiveGpsLocation['service'], reportId?: string) {
   if (!firestore) return null;
   try {
-    const snapshot = await getDoc(doc(firestore, 'liveGps', service));
+    const snapshot = await getDoc(doc(firestore, 'liveGps', reportId ? `${service}:${reportId}` : service));
     return snapshot.exists() ? snapshot.data() as LiveGpsLocation : null;
   } catch {
     return null;

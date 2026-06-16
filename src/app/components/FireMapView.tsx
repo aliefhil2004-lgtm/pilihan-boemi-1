@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { getReportServices, type ServiceType, type StoredEmergencyReport } from '../types/emergency';
+import { getReportServices, getServiceStatus, type ServiceType, type StoredEmergencyReport } from '../types/emergency';
 import type { PublicCctvCamera } from '../config/cctv';
 import type { LiveGpsLocation } from '../services/liveGps';
+import { getVisibleDangerZones } from '../config/dangerZones';
+import { getReportMarkerMeta } from '../utils/mapMarkers';
 
 interface FireMapViewProps {
   userLocation: { lat: number; lng: number };
@@ -14,9 +16,9 @@ interface FireMapViewProps {
 }
 
 const serviceMarkerConfig = {
-  ambulance: { symbol: '+', label: 'Medical', background: '#dc2626' },
-  fire: { symbol: '🔥', label: 'Fire', background: '#ea580c' },
-  police: { symbol: '🦹', label: 'Crime', background: '#4f46e5' }
+  ambulance: { symbol: '🚑', label: 'Ambulance Unit', background: '#6da5c4', fontSize: '19px' },
+  fire: { symbol: '🚒', label: 'Fire Truck Unit', background: '#ea580c', fontSize: '19px' },
+  police: { symbol: '🚓', label: 'Police Car Unit', background: '#2563eb', fontSize: '19px' }
 };
 
 function getPrimaryService(services: ServiceType[]): ServiceType {
@@ -27,9 +29,13 @@ function getPrimaryService(services: ServiceType[]): ServiceType {
 
 function createServiceMarkerElement(service: keyof typeof serviceMarkerConfig) {
   const config = serviceMarkerConfig[service];
+  return createMarkerElement(config);
+}
+
+function createMarkerElement(config: { symbol: string; label: string; background: string; fontSize?: string | number }) {
   const markerElement = document.createElement('div');
-  markerElement.title = `${config.label} emergency`;
-  markerElement.setAttribute('aria-label', `${config.label} emergency marker`);
+  markerElement.title = config.label;
+  markerElement.setAttribute('aria-label', `${config.label} marker`);
   markerElement.style.width = '38px';
   markerElement.style.height = '38px';
   markerElement.style.display = 'flex';
@@ -39,12 +45,47 @@ function createServiceMarkerElement(service: keyof typeof serviceMarkerConfig) {
   markerElement.style.borderRadius = '9999px';
   markerElement.style.background = config.background;
   markerElement.style.color = 'white';
-  markerElement.style.fontSize = service === 'ambulance' ? '26px' : '20px';
+  markerElement.style.fontSize = typeof config.fontSize === 'number' ? `${config.fontSize}px` : config.fontSize ?? '20px';
   markerElement.style.fontWeight = '900';
   markerElement.style.boxShadow = '0 8px 18px rgba(0,0,0,.35)';
   markerElement.style.lineHeight = '1';
   markerElement.textContent = config.symbol;
   return markerElement;
+}
+
+function createStackedMarkerElement(
+  config: { symbol: string; label: string; background: string; fontSize?: string | number },
+  count: number
+) {
+  const markerElement = createMarkerElement(config);
+  if (count <= 1) return markerElement;
+
+  const badge = document.createElement('span');
+  badge.textContent = `+${count}`;
+  badge.style.position = 'absolute';
+  badge.style.right = '-10px';
+  badge.style.top = '-10px';
+  badge.style.minWidth = '23px';
+  badge.style.height = '23px';
+  badge.style.padding = '0 5px';
+  badge.style.display = 'flex';
+  badge.style.alignItems = 'center';
+  badge.style.justifyContent = 'center';
+  badge.style.border = '2px solid white';
+  badge.style.borderRadius = '9999px';
+  badge.style.background = '#0c3249';
+  badge.style.color = 'white';
+  badge.style.fontSize = '10px';
+  badge.style.fontWeight = '900';
+  badge.style.lineHeight = '1';
+  badge.style.boxShadow = '0 4px 10px rgba(0,0,0,.28)';
+  markerElement.style.position = 'relative';
+  markerElement.appendChild(badge);
+  return markerElement;
+}
+
+function coordinateKey(coords: { lat: number; lng: number }) {
+  return `${coords.lat.toFixed(5)},${coords.lng.toFixed(5)}`;
 }
 
 function seededNoise(seed: string, index: number) {
@@ -118,23 +159,6 @@ export function FireMapView({ userLocation, reports, cameras, onCameraSelect, li
     });
 
     const bounds = new maplibregl.LngLatBounds().extend([userLocation.lng, userLocation.lat]);
-    const getDangerZones = (scale: number) => {
-      if (scale >= 8) return [
-        { level: 'Yellow Caution Perimeter', color: '#eab308', stroke: '#a16207', radiusMeters: 230 },
-        { level: 'Critical Zone', color: '#dc2626', stroke: '#991b1b', radiusMeters: 115 }
-      ];
-      if (scale >= 6) return [
-        { level: 'Yellow Caution Perimeter', color: '#eab308', stroke: '#a16207', radiusMeters: 190 },
-        { level: 'High Risk Zone', color: '#f97316', stroke: '#c2410c', radiusMeters: 95 }
-      ];
-      if (scale >= 3) return [
-        { level: 'Yellow Caution Zone', color: '#eab308', stroke: '#a16207', radiusMeters: 130 }
-      ];
-      return [
-        { level: 'Watch Zone', color: '#22c55e', stroke: '#15803d', radiusMeters: 70 }
-      ];
-    };
-
     const reportPoints = reports.map((report, index) => {
       const fallbackOffset = ((index % 7) + 1) * 0.006;
       const coords = report.coords ?? {
@@ -142,9 +166,23 @@ export function FireMapView({ userLocation, reports, cameras, onCameraSelect, li
         lng: userLocation.lng + (index % 3 === 0 ? fallbackOffset : -fallbackOffset)
       };
       const services = getReportServices(report);
-      const zones = getDangerZones(report.injuryScale);
+      const hasDangerZoneService = services.some(service =>
+        (service === 'fire' || service === 'police') &&
+        !['resolved', 'done', 'declined'].includes(getServiceStatus(report, service))
+      );
+      const zones = hasDangerZoneService ? getVisibleDangerZones(report.injuryScale) : [];
       return { report, coords, services, zones };
     });
+    const reportGroups = [...reportPoints.reduce((groups, point) => {
+      const key = coordinateKey(point.coords);
+      const existing = groups.get(key);
+      if (existing) {
+        existing.points.push(point);
+      } else {
+        groups.set(key, { coords: point.coords, points: [point] });
+      }
+      return groups;
+    }, new Map<string, { coords: { lat: number; lng: number }; points: typeof reportPoints }>()).values()];
 
     const failSafe = window.setTimeout(() => setMapReady(true), 5000);
 
@@ -172,7 +210,7 @@ export function FireMapView({ userLocation, reports, cameras, onCameraSelect, li
           type: 'Feature' as const,
           geometry: {
             type: 'Polygon' as const,
-            coordinates: [createAreaPolygon(coords.lng, coords.lat, zone.radiusMeters, `${report.id}-${zone.level}`)]
+            coordinates: [createAreaPolygon(coords.lng, coords.lat, zone.radiusMeters, `${report.id}-${zone.label}`)]
           },
           properties: {
             id: `${report.id}-${zoneIndex}`,
@@ -181,7 +219,7 @@ export function FireMapView({ userLocation, reports, cameras, onCameraSelect, li
             location: report.location,
             priority: report.injuryScale,
             services: services.join(', '),
-            level: zone.level,
+            level: zone.label,
             color: zone.color,
             stroke: zone.stroke,
             radiusMeters: zone.radiusMeters
@@ -232,20 +270,31 @@ export function FireMapView({ userLocation, reports, cameras, onCameraSelect, li
       map.on('mouseenter', 'danger-zone-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', 'danger-zone-fill', () => { map.getCanvas().style.cursor = ''; });
 
-      reportPoints.forEach(({ report, coords, services, zones }) => {
-        const primaryService = getPrimaryService(services);
-        const primaryZone = zones[zones.length - 1];
+      reportGroups.forEach(({ coords, points }) => {
+        const firstPoint = points[0];
+        const primaryService = getPrimaryService(firstPoint.services);
         const popup = document.createElement('div');
         const title = document.createElement('strong');
-        title.textContent = report.emergencyType ?? 'Emergency Report';
+        title.textContent = points.length > 1 ? `${points.length} reports at this location` : firstPoint.report.emergencyType ?? 'Emergency Report';
         popup.append(title, document.createElement('br'));
-        popup.append(report.location, document.createElement('br'));
-        popup.append(`Priority: ${report.injuryScale}/10`, document.createElement('br'));
-        popup.append(`Main zone: ${primaryZone.level} (${primaryZone.radiusMeters}m)`, document.createElement('br'));
-        if (zones.length > 1) popup.append(`Caution perimeter: ${zones[0].radiusMeters}m`, document.createElement('br'));
-        popup.append(`Services: ${services.join(', ')}`);
+        points.forEach((point, index) => {
+          if (points.length > 1) {
+            popup.append(`${index + 1}. ${point.report.emergencyType ?? 'Emergency Report'}`, document.createElement('br'));
+          }
+          popup.append(point.report.location, document.createElement('br'));
+          popup.append(`Priority: ${point.report.injuryScale}/10`, document.createElement('br'));
+          if (point.zones.length) {
+            const zone = point.zones[point.zones.length - 1];
+            popup.append(`Main zone: ${zone.label} (${zone.radiusMeters}m)`, document.createElement('br'));
+            if (point.zones.length > 1) popup.append(`Caution perimeter: ${point.zones[0].radiusMeters}m`, document.createElement('br'));
+          } else {
+            popup.append('Danger zone: none for medical-only reports', document.createElement('br'));
+          }
+          popup.append(`Services: ${point.services.join(', ')}`);
+          if (index < points.length - 1) popup.append(document.createElement('hr'));
+        });
 
-        new maplibregl.Marker({ element: createServiceMarkerElement(primaryService) })
+        new maplibregl.Marker({ element: createStackedMarkerElement(getReportMarkerMeta(firstPoint.report, primaryService), points.length) })
           .setLngLat([coords.lng, coords.lat])
           .setPopup(new maplibregl.Popup({ offset: 20 }).setDOMContent(popup))
           .addTo(map);
