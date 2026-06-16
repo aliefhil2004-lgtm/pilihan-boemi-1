@@ -22,19 +22,19 @@ const serviceProfiles = {
     name: 'Jordan Lee',
     unit: serviceUnitConfig.ambulance.unit,
     role: serviceUnitConfig.ambulance.role,
-    avatar: 'https://api.builder.io/api/v1/image/assets/TEMP/1d24c44bee18a946af40fb10c60ad5961b3a8097?width=192'
+    avatar: 'https://images.unsplash.com/photo-1582750433449-648ed127bb54?auto=format&fit=crop&w=192&h=192&q=80'
   },
   fire: {
     name: 'Alex Morgan',
     unit: serviceUnitConfig.fire.unit,
     role: serviceUnitConfig.fire.role,
-    avatar: 'https://api.builder.io/api/v1/image/assets/TEMP/1d24c44bee18a946af40fb10c60ad5961b3a8097?width=192'
+    avatar: 'https://images.unsplash.com/photo-1602417742134-45fd0d0d5208?auto=format&fit=crop&w=192&h=192&q=80'
   },
   police: {
     name: 'Raka Putra',
     unit: serviceUnitConfig.police.unit,
     role: serviceUnitConfig.police.role,
-    avatar: 'https://api.builder.io/api/v1/image/assets/TEMP/1d24c44bee18a946af40fb10c60ad5961b3a8097?width=192'
+    avatar: 'https://images.unsplash.com/photo-1590999659195-e64a988eaf04?auto=format&fit=crop&w=192&h=192&q=80'
   }
 };
 
