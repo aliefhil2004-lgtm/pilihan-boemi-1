@@ -162,8 +162,29 @@ export async function analyzeEmergencyTextWithNlp(text: string): Promise<NlpEmer
       available?: boolean;
       model?: string;
       classifications?: NlpClassification[];
+      result?: Partial<NlpEmergencyResult>;
     };
-    if (!result.available || !result.classifications?.length) return localResult;
+    if (!result.available) return localResult;
+
+    const remoteResult = result.result;
+    if (
+      remoteResult &&
+      typeof remoteResult.type === 'string' &&
+      (remoteResult.service === 'ambulance' || remoteResult.service === 'fire' || remoteResult.service === 'police') &&
+      typeof remoteResult.score === 'number'
+    ) {
+      const normalizedRemote: NlpEmergencyResult = {
+        type: remoteResult.type,
+        service: remoteResult.service,
+        services: remoteResult.services,
+        score: remoteResult.score,
+        indicators: Array.isArray(remoteResult.indicators) ? remoteResult.indicators : [`NLP text analysis: ${remoteResult.type}`]
+      };
+      if (localResult && localResult.score >= normalizedRemote.score) return localResult;
+      return normalizedRemote;
+    }
+
+    if (!result.classifications?.length) return localResult;
 
     const strongest = [...result.classifications].sort((a, b) => b.score - a.score)[0];
     const mapping = labelMapping[strongest.label];

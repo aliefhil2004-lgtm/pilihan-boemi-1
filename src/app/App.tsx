@@ -21,7 +21,7 @@ import { CountryPicker } from './components/CountryPicker';
 import { LanguageToggle } from './components/LanguageToggle';
 import { ArrowLeft, Globe2, PhoneCall } from 'lucide-react';
 import { analyzeEmergency } from './services/ai';
-import { createServiceStatuses, getReportServices, type ServiceType, type StoredEmergencyReport } from './types/emergency';
+import { createServiceStatuses, getReportServices, getServiceStatus, type ServiceType, type StoredEmergencyReport } from './types/emergency';
 import { cleanupExpiredReports, createNextReportCode, replaceReports, resetPreviousHistoryOnce, saveReport } from './services/reportStorage';
 import { startReportSync } from './services/firebaseSync';
 import {
