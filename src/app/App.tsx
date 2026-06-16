@@ -90,24 +90,47 @@ interface UserLocation {
   coords: { lat: number; lng: number };
 }
 
-function detectCurrentLocation(countryName: string): Promise<UserLocation> {
+function getPosition(options: PositionOptions): Promise<GeolocationPosition> {
   return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, options);
+  });
+}
+
+async function getCurrentPositionWithFallback() {
+  try {
+    return await getPosition({ enableHighAccuracy: true, timeout: 12000, maximumAge: 0 });
+  } catch (error) {
+    const geolocationError = error as GeolocationPositionError;
+    if (geolocationError.code === geolocationError.PERMISSION_DENIED) throw error;
+    return getPosition({ enableHighAccuracy: false, timeout: 20000, maximumAge: 60 * 1000 });
+  }
+}
+
+function getLocationErrorMessage(error: unknown) {
+  const geolocationError = error as Partial<GeolocationPositionError>;
+  if (geolocationError.code === 1) return 'Location permission is blocked. Please allow location access in your browser settings.';
+  if (geolocationError.code === 2) return 'Your device location is unavailable. Turn on GPS/location services and try again.';
+  if (geolocationError.code === 3) return 'Location request timed out. Move to a better signal area and try again.';
+  return error instanceof Error ? error.message : 'Unable to refresh current location';
+}
+
+function detectCurrentLocation(countryName: string): Promise<UserLocation> {
+  return new Promise(async (resolve, reject) => {
     if (!navigator.geolocation) {
       reject(new Error('Geolocation not supported'));
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const lat = position.coords.latitude;
-        const lng = position.coords.longitude;
-        const { reverseGeocode } = await import('./services/geocoding');
-        const address = await reverseGeocode(lat, lng, `Current location in ${countryName}`);
-        resolve({ address, coords: { lat, lng } });
-      },
-      reject,
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    );
+    try {
+      const position = await getCurrentPositionWithFallback();
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
+      const { reverseGeocode } = await import('./services/geocoding');
+      const address = await reverseGeocode(lat, lng, `Current location in ${countryName}`);
+      resolve({ address, coords: { lat, lng } });
+    } catch (error) {
+      reject(error);
+    }
   });
 }
 
@@ -287,8 +310,8 @@ export default function App() {
       setUserLocation(nextLocation);
       setEmergencyData(prev => ({ ...prev, location: nextLocation.address }));
       toast.success('Current location refreshed');
-    } catch {
-      toast.error('Unable to refresh current location');
+    } catch (error) {
+      toast.error(getLocationErrorMessage(error));
     }
   };
 
