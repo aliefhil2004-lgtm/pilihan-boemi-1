@@ -402,38 +402,35 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
       clearLiveGps(serviceType, sharingGpsReportId);
     }
 
-    const publishFallbackLocation = () => {
+    const publishServiceLocation = (coords: { lat: number; lng: number }) => {
       publishLiveGps({
         service: serviceType,
         reportId: targetReport.id,
         unit: unitIds[serviceType],
-        ...serviceLocation.coords,
+        ...coords,
         updatedAt: Date.now()
       });
       setSharingGpsReportId(targetReport.id);
-      toast.success(`Live GPS sharing enabled for #${formatReportCode(targetReport)}`);
     };
 
+    publishServiceLocation(serviceLocation.coords);
+    toast.success(`Live GPS sharing enabled for #${formatReportCode(targetReport)}`);
+
     if (!navigator.geolocation) {
-      publishFallbackLocation();
       return;
     }
 
     navigator.geolocation.getCurrentPosition(
       position => {
-        publishLiveGps({
-          service: serviceType,
-          reportId: targetReport.id,
-          unit: unitIds[serviceType],
+        const coords = {
           lat: position.coords.latitude,
-          lng: position.coords.longitude,
-          updatedAt: Date.now()
-        });
-        setSharingGpsReportId(targetReport.id);
-        toast.success(`Live GPS sharing enabled for #${formatReportCode(targetReport)}`);
+          lng: position.coords.longitude
+        };
+        setServiceLocation(location => ({ ...location, coords }));
+        publishServiceLocation(coords);
       },
-      publishFallbackLocation,
-      { enableHighAccuracy: true }
+      () => undefined,
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 8000 }
     );
   };
 
@@ -442,18 +439,43 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
     coords: { lat: number; lng: number }
   ) => {
     setServiceLocation({ address, coords });
-    if (!selectedReport?.id) {
-      toast.info('Open a report before publishing live tracking');
-      return;
-    }
+    const activeReportId = sharingGpsReportId ?? selectedReport?.id;
+    if (!activeReportId) return;
+
     publishLiveGps({
       service: serviceType,
-      reportId: selectedReport.id,
+      reportId: activeReportId,
       unit: unitIds[serviceType],
       ...coords,
       updatedAt: Date.now()
     });
-    toast.success('Service location published to live tracking');
+    toast.success('Service location updated on live tracking');
+  };
+
+  const refreshServiceLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error('Location is not available on this device');
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        const coords = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        };
+        void import('../services/geocoding').then(async ({ reverseGeocode }) => {
+          const address = await reverseGeocode(coords.lat, coords.lng, serviceLocation.address || currentLocation);
+          handleServiceLocationChange(address, coords);
+          toast.success('Service location refreshed');
+        }).catch(() => {
+          handleServiceLocationChange(serviceLocation.address || currentLocation, coords);
+          toast.success('Service location refreshed');
+        });
+      },
+      () => toast.error('Unable to refresh service location. Please allow location access.'),
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 }
+    );
   };
 
   const handleClosurePhotoChange = (file: File | undefined) => {
@@ -1202,6 +1224,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
       <LocationPicker
         currentLocation={serviceLocation.address}
         onLocationChange={handleServiceLocationChange}
+        onRefreshLocation={refreshServiceLocation}
         onClose={() => setShowLocationPicker(false)}
         country={country}
       />
