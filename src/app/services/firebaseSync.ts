@@ -106,6 +106,15 @@ export async function syncLiveGpsToFirebase(location: LiveGpsLocation) {
   }
 }
 
+export async function deleteLiveGpsFromFirebase(service: LiveGpsLocation['service'], reportId?: string) {
+  if (!firestore) return;
+  try {
+    await deleteDoc(doc(firestore, 'liveGps', reportId ? `${service}:${reportId}` : service));
+  } catch (error) {
+    console.warn('Unable to delete live GPS from Firebase.', error);
+  }
+}
+
 export async function fetchLiveGpsFromFirebase(service: LiveGpsLocation['service'], reportId?: string) {
   if (!firestore) return null;
   try {

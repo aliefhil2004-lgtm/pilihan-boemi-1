@@ -3,7 +3,7 @@ import { Ambulance, Flame, Shield, Clock, MapPin, AlertTriangle, Phone, Navigati
 import { EmergencyMap } from './EmergencyMap.tsx';
 import { IPhoneStatusBar } from './IPhoneStatusBar';
 import { toast } from 'sonner';
-import { publishLiveGps } from '../services/liveGps';
+import { clearLiveGps, publishLiveGps } from '../services/liveGps';
 import { LocationPicker } from './LocationPicker';
 import { createServiceStatuses, formatReportCode, getOverallStatus, getReportServices, getServiceStatus, type AuditEntry, type ReportStatus, type ServiceType, type StoredEmergencyReport, type UnitAssignment } from '../types/emergency';
 import { cleanupExpiredReports, replaceReports } from '../services/reportStorage';
@@ -35,9 +35,10 @@ interface EmergencyServiceDashboardProps {
   currentCoords: { lat: number; lng: number };
   canViewSensitiveMedia: boolean;
   serviceDisplayName?: string;
+  onOpenProfile?: () => void;
 }
 
-export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitizen, onBack, country, currentLocation, currentCoords, canViewSensitiveMedia, serviceDisplayName }: EmergencyServiceDashboardProps) {
+export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitizen, onBack, country, currentLocation, currentCoords, canViewSensitiveMedia, serviceDisplayName, onOpenProfile }: EmergencyServiceDashboardProps) {
   const [reports, setReports] = useState<EmergencyReport[]>([]);
   const [selectedReport, setSelectedReport] = useState<EmergencyReport | null>(null);
   const [detailMode, setDetailMode] = useState<'detail' | 'closure'>('detail');
@@ -391,9 +392,14 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
     }
 
     if (sharingGpsReportId === targetReport.id) {
+      clearLiveGps(serviceType, targetReport.id);
       setSharingGpsReportId(null);
       toast.info(`Live GPS sharing stopped for #${formatReportCode(targetReport)}`);
       return;
+    }
+
+    if (sharingGpsReportId) {
+      clearLiveGps(serviceType, sharingGpsReportId);
     }
 
     const publishFallbackLocation = () => {
@@ -436,9 +442,13 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
     coords: { lat: number; lng: number }
   ) => {
     setServiceLocation({ address, coords });
+    if (!selectedReport?.id) {
+      toast.info('Open a report before publishing live tracking');
+      return;
+    }
     publishLiveGps({
       service: serviceType,
-      reportId: selectedReport?.id,
+      reportId: selectedReport.id,
       unit: unitIds[serviceType],
       ...coords,
       updatedAt: Date.now()
@@ -530,6 +540,15 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
   }, [serviceType, sharingGpsReportId]);
 
   useEffect(() => {
+    if (!sharingGpsReportId) return;
+    const activeReport = reports.find(report => report.id === sharingGpsReportId);
+    if (!activeReport || !['responding', 'arrived'].includes(getServiceStatus(activeReport, serviceType))) {
+      clearLiveGps(serviceType, sharingGpsReportId);
+      setSharingGpsReportId(null);
+    }
+  }, [reports, serviceType, sharingGpsReportId]);
+
+  useEffect(() => {
     if (!selectedReport?.coords) {
       setDetailRoute(null);
       return;
@@ -555,6 +574,8 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
     : severityLabel === 'MEDIUM'
     ? 'border-yellow-300 bg-yellow-100 text-yellow-700'
     : 'border-blue-200 bg-blue-100 text-blue-700';
+  const reporterName = selectedReport?.reporterName?.trim() || 'Citizen Reporter';
+  const reporterPhone = selectedReport?.reporterPhone?.trim() || citizenContactNumber;
 
   if (selectedReport && detailMode === 'closure') {
     return (
@@ -694,7 +715,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
 
         <div className="absolute bottom-0 left-0 right-0 flex h-20 items-center justify-between rounded-t-[24px] bg-white px-20 shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
           <button onClick={() => setSelectedReport(null)} className="flex flex-col items-center gap-1 text-[#ef4444]"><Home className="h-6 w-6 fill-current" /><span className="text-[10px] font-bold leading-[15px]">Home</span></button>
-          <button className="flex flex-col items-center gap-1 text-[#9ca3af]"><User className="h-6 w-6" /><span className="text-[10px] font-medium leading-[15px]">Profile</span></button>
+          <button onClick={onOpenProfile} className="flex flex-col items-center gap-1 text-[#9ca3af]"><User className="h-6 w-6" /><span className="text-[10px] font-medium leading-[15px]">Profile</span></button>
         </div>
       </div>
     );
@@ -748,11 +769,14 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
                   <User className="h-4 w-4" />
                 </span>
                 <div>
-                  <p className="text-[16px] font-bold leading-6">Mytha Floyen</p>
+                  <p className="text-[16px] font-bold leading-6">{reporterName}</p>
                   <p className="flex items-center gap-1 text-[14px] leading-5 text-[#0c3249]/50">
                     <CheckCircle2 className="h-[13px] w-[13px] fill-[#4caf50] text-[#4caf50]" />
                     Verified User
                   </p>
+                  {reporterPhone && (
+                    <p className="mt-0.5 text-[12px] leading-4 text-[#0c3249]/45">{reporterPhone}</p>
+                  )}
                 </div>
               </div>
               <div className="flex gap-1.5">
@@ -892,7 +916,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
 
         <div className="absolute bottom-0 left-0 right-0 flex h-20 items-center justify-between rounded-t-[24px] bg-white px-20 shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
           <button onClick={() => setSelectedReport(null)} className="flex flex-col items-center gap-1 text-[#ef4444]"><Home className="h-6 w-6 fill-current" /><span className="text-[10px] font-bold leading-[15px]">Home</span></button>
-          <button className="flex flex-col items-center gap-1 text-[#9ca3af]"><User className="h-6 w-6" /><span className="text-[10px] font-medium leading-[15px]">Profile</span></button>
+          <button onClick={onOpenProfile} className="flex flex-col items-center gap-1 text-[#9ca3af]"><User className="h-6 w-6" /><span className="text-[10px] font-medium leading-[15px]">Profile</span></button>
         </div>
       </div>
     );

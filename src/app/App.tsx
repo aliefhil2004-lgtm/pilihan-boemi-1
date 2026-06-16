@@ -677,7 +677,7 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
   const showNavigation =
     userRole === 'civilian'
       ? currentScreen !== 'service-dashboard' && currentScreen !== 'processing' && currentScreen !== 'fire-map' && currentScreen !== 'call'
-      : userRole === 'service' && (currentScreen === 'home' || currentScreen === 'profile');
+      : userRole === 'service' && (currentScreen === 'home' || currentScreen === 'service-dashboard' || currentScreen === 'profile');
   
   // Show login or register screen if not logged in
   if (!userRole) {
@@ -850,9 +850,10 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
           canViewSensitiveMedia={canViewSensitiveMedia}
           serviceDisplayName={userProfile?.name}
           onBack={() => setCurrentScreen('home')}
+          onOpenProfile={() => setCurrentScreen('profile')}
           onOpenChat={reportId => handleOpenChat(reportId, 'service-dashboard')}
           onCallCitizen={(report) => handleOpenCall({
-            contactName: report.reporterName || 'Mytha Floyen',
+            contactName: report.reporterName || 'Citizen Reporter',
             contactRole: 'Civilian',
             serviceType: selectedService,
             serviceTypes: [selectedService],
@@ -879,7 +880,7 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
             const services = getReportServices(report);
             const primaryService = services[0] ?? report.service ?? selectedService;
             handleOpenCall({
-              contactName: userRole === 'civilian' ? 'Emergency Dispatch' : report.reporterName || 'Mytha Floyen',
+              contactName: userRole === 'civilian' ? 'Emergency Dispatch' : report.reporterName || 'Citizen Reporter',
               contactRole: userRole === 'civilian'
                 ? services.map(service => service === 'ambulance' ? 'Medical Unit' : service === 'fire' ? 'Fire Unit' : 'Police Unit').join(' & ')
                 : 'Civilian',

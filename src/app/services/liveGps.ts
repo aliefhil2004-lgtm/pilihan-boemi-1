@@ -1,5 +1,5 @@
 import type { ServiceType } from './ai';
-import { fetchLiveGpsFromFirebase, syncLiveGpsToFirebase } from './firebaseSync';
+import { deleteLiveGpsFromFirebase, fetchLiveGpsFromFirebase, syncLiveGpsToFirebase } from './firebaseSync';
 
 export interface LiveGpsLocation {
   service: ServiceType;
@@ -65,6 +65,17 @@ export function publishLiveGpsSilent(location: LiveGpsLocation) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(locations));
   window.dispatchEvent(new Event('emergency-gps-updated'));
   void syncLiveGpsToFirebase(location);
+}
+
+export function clearLiveGps(service: ServiceType, reportId?: string) {
+  const locations = JSON.parse(
+    localStorage.getItem(STORAGE_KEY) || '{}'
+  ) as Record<string, LiveGpsLocation>;
+
+  delete locations[locationKey(service, reportId)];
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(locations));
+  window.dispatchEvent(new Event('emergency-gps-updated'));
+  void deleteLiveGpsFromFirebase(service, reportId);
 }
 
 export async function startAutoLiveGps(service: ServiceType, unit: string, onUpdate?: (location: LiveGpsLocation) => void, reportId?: string) {
