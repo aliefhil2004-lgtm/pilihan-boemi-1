@@ -7,10 +7,10 @@ interface IPhoneStatusBarProps {
 
 export function IPhoneStatusBar({ dark = false }: IPhoneStatusBarProps) {
   const colorClass = dark ? 'text-white' : 'text-black';
-  const [timeLabel, setTimeLabel] = useState(() => formatDeviceTime());
+  const [timeLabel, setTimeLabel] = useState(() => getDeviceTimeParts());
 
   useEffect(() => {
-    const updateTime = () => setTimeLabel(formatDeviceTime());
+    const updateTime = () => setTimeLabel(getDeviceTimeParts());
     updateTime();
     const interval = window.setInterval(updateTime, 1000);
     return () => window.clearInterval(interval);
@@ -18,7 +18,12 @@ export function IPhoneStatusBar({ dark = false }: IPhoneStatusBarProps) {
 
   return (
     <div className={`pointer-events-none absolute inset-x-0 top-0 z-[60] h-[47px] ${colorClass}`}>
-      <span className="absolute left-[21px] top-[15px] w-[54px] text-center text-[15px] font-bold leading-none tracking-normal">{timeLabel}</span>
+      <span className="absolute left-[21px] top-[14px] flex w-[68px] items-baseline justify-center gap-[2px] whitespace-nowrap font-bold tracking-normal">
+        <span className="text-[16px] leading-none">{timeLabel.time}</span>
+        {timeLabel.period && (
+          <span className="text-[10px] uppercase leading-none">{timeLabel.period}</span>
+        )}
+      </span>
       <div className="absolute left-[302px] top-[19px] flex h-3 w-[70px] items-center gap-1.5">
         <div className="flex h-[11px] items-end gap-[2px]" aria-hidden="true">
           <span className="block h-[5px] w-[3px] rounded-sm bg-current" />
@@ -33,9 +38,18 @@ export function IPhoneStatusBar({ dark = false }: IPhoneStatusBarProps) {
   );
 }
 
-function formatDeviceTime() {
-  return new Intl.DateTimeFormat(undefined, {
+function getDeviceTimeParts() {
+  const formatter = new Intl.DateTimeFormat(undefined, {
     hour: 'numeric',
     minute: '2-digit'
-  }).format(new Date());
+  });
+  const parts = formatter.formatToParts(new Date());
+  const hour = parts.find(part => part.type === 'hour')?.value ?? '';
+  const minute = parts.find(part => part.type === 'minute')?.value ?? '';
+  const literal = parts.find(part => part.type === 'literal')?.value ?? ':';
+  const period = parts.find(part => part.type === 'dayPeriod')?.value ?? '';
+  return {
+    time: `${hour}${literal}${minute}`.trim(),
+    period
+  };
 }
