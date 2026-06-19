@@ -4,9 +4,17 @@ import { toast } from 'sonner';
 import { reverseGeocode } from '../services/geocoding';
 import { t, type Language } from '../i18n';
 import { analyzeEmergencyImage } from '../roboflow';
+import type { EvidenceMetadata } from '../types/emergency';
+import { anonymizePhotoPixels, detectPrivacyRegionsFromPhoto } from '../services/privacyDetector';
 
 interface EmergencyReportScreenProps {
-  onSubmit: (data: { photo: string | null; description: string; location: string; coords?: { lat: number; lng: number } }) => void;
+  onSubmit: (data: {
+    photo: string | null;
+    description: string;
+    location: string;
+    coords?: { lat: number; lng: number };
+    evidenceMetadata?: EvidenceMetadata;
+  }) => void;
   onBack?: () => void;
   defaultLocation?: string;
   defaultCoords?: { lat: number; lng: number };
@@ -51,7 +59,16 @@ function extractLiveCameraDetection(value: unknown): LiveCameraDetection | null 
   };
 }
 
-function preparePhotoForAnalysis(file: File): Promise<string> {
+function fingerprintPhoto(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 97) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `img-${(hash >>> 0).toString(16)}-${value.length}`;
+}
+
+function preparePhotoForAnalysis(file: File): Promise<{ dataUrl: string; width: number; height: number }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('Unable to read photo'));
@@ -65,7 +82,11 @@ function preparePhotoForAnalysis(file: File): Promise<string> {
         canvas.width = Math.round(image.width * scale);
         canvas.height = Math.round(image.height * scale);
         canvas.getContext('2d')?.drawImage(image, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.82));
+        resolve({
+          dataUrl: canvas.toDataURL('image/jpeg', 0.82),
+          width: canvas.width,
+          height: canvas.height
+        });
       };
       image.src = reader.result as string;
     };
@@ -78,6 +99,8 @@ export function EmergencyReportScreen({ onSubmit, onBack, defaultLocation, defau
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState(defaultLocation || '');
   const [coords, setCoords] = useState<{ lat: number; lng: number } | undefined>(defaultCoords);
+  const [gpsAccuracyMeters, setGpsAccuracyMeters] = useState<number | undefined>();
+  const [evidenceMetadata, setEvidenceMetadata] = useState<EvidenceMetadata | undefined>();
   const [isLocating, setIsLocating] = useState(!defaultLocation);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [liveDetection, setLiveDetection] = useState<LiveCameraDetection | null>(null);
@@ -90,18 +113,19 @@ export function EmergencyReportScreen({ onSubmit, onBack, defaultLocation, defau
   const tr = (key: Parameters<typeof t>[1]) => t(language, key);
 
   useEffect(() => {
-    // Auto-detect location on mount if no default location
-    if (!defaultLocation && navigator.geolocation) {
+    // Refresh coordinates and accuracy even when a default address is already available.
+    if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         async (position) => {
           const nextCoords = { lat: position.coords.latitude, lng: position.coords.longitude };
           setCoords(nextCoords);
-          setLocation(await reverseGeocode(nextCoords.lat, nextCoords.lng));
+          setGpsAccuracyMeters(position.coords.accuracy);
+          if (!defaultLocation) setLocation(await reverseGeocode(nextCoords.lat, nextCoords.lng));
           setIsLocating(false);
-          toast.success(tr('report.locationDetected'));
+          if (!defaultLocation) toast.success(tr('report.locationDetected'));
         },
         () => {
-          setLocation(tr('report.locationUnavailable'));
+          if (!defaultLocation) setLocation(tr('report.locationUnavailable'));
           setIsLocating(false);
         }
       );
@@ -135,7 +159,10 @@ export function EmergencyReportScreen({ onSubmit, onBack, defaultLocation, defau
         canvas.width = Math.round(video.videoWidth * scale);
         canvas.height = Math.round(video.videoHeight * scale);
         canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const result = await analyzeEmergencyImage(canvas.toDataURL('image/jpeg', 0.68), description);
+        const frame = canvas.toDataURL('image/jpeg', 0.68);
+        const privacyRegions = await detectPrivacyRegionsFromPhoto(frame);
+        const anonymizedFrame = await anonymizePhotoPixels(frame, privacyRegions);
+        const result = await analyzeEmergencyImage(anonymizedFrame, description);
         setLiveDetection(extractLiveCameraDetection(result));
       } catch {
         setLiveDetection(null);
@@ -200,7 +227,18 @@ export function EmergencyReportScreen({ onSubmit, onBack, defaultLocation, defau
     canvas.width = Math.round(video.videoWidth * scale);
     canvas.height = Math.round(video.videoHeight * scale);
     canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
-    setPhoto(canvas.toDataURL('image/jpeg', 0.82));
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+    setPhoto(dataUrl);
+    setEvidenceMetadata({
+      source: 'camera',
+      capturedAt: new Date().toISOString(),
+      mimeType: 'image/jpeg',
+      sizeBytes: Math.round(dataUrl.length * 0.75),
+      width: canvas.width,
+      height: canvas.height,
+      gpsAccuracyMeters,
+      fingerprint: fingerprintPhoto(dataUrl)
+    });
     closeCamera();
     toast.success(tr('report.photoCaptured'));
   };
@@ -216,7 +254,18 @@ export function EmergencyReportScreen({ onSubmit, onBack, defaultLocation, defau
       }
 
       try {
-        setPhoto(await preparePhotoForAnalysis(file));
+        const prepared = await preparePhotoForAnalysis(file);
+        setPhoto(prepared.dataUrl);
+        setEvidenceMetadata({
+          source: 'upload',
+          fileLastModifiedAt: file.lastModified ? new Date(file.lastModified).toISOString() : undefined,
+          mimeType: file.type,
+          sizeBytes: file.size,
+          width: prepared.width,
+          height: prepared.height,
+          gpsAccuracyMeters,
+          fingerprint: fingerprintPhoto(prepared.dataUrl)
+        });
         toast.success(tr('report.photoUploaded'));
       } catch {
         toast.error(tr('report.photoFailed'));
@@ -239,7 +288,10 @@ export function EmergencyReportScreen({ onSubmit, onBack, defaultLocation, defau
         photo,
         description: trimmedDescription || tr('report.defaultDescription'),
         location,
-        coords
+        coords,
+        evidenceMetadata: evidenceMetadata
+          ? { ...evidenceMetadata, gpsAccuracyMeters: evidenceMetadata.gpsAccuracyMeters ?? gpsAccuracyMeters }
+          : undefined
       })
     ).catch(() => {
       setIsSubmitting(false);

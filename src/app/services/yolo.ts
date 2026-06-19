@@ -6,6 +6,8 @@ export interface YoloDetection {
 export async function analyzeEmergencyWithYolo(
   imageBase64: string
 ): Promise<YoloDetection[]> {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return [];
+
   try {
     const response = await fetch('/api/yolo', {
       method: 'POST',

@@ -1,6 +1,7 @@
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getFirestore } from 'firebase-admin/firestore';
+import { getAuth } from 'firebase-admin/auth';
 
 type ServiceType = 'ambulance' | 'fire' | 'police';
 type ReportStatus = 'pending' | 'responding' | 'arrived' | 'resolved' | 'done';
@@ -40,6 +41,14 @@ function getAdminFirestore() {
   return getFirestore();
 }
 
+async function authenticate(request: VercelRequest) {
+  const headers = (request as VercelRequest & { headers?: Record<string, string | string[] | undefined> }).headers;
+  const authorization = headers?.authorization;
+  const value = Array.isArray(authorization) ? authorization[0] : authorization;
+  if (!value?.startsWith('Bearer ')) throw new Error('Authentication required');
+  return getAuth().verifyIdToken(value.slice(7));
+}
+
 function parseBody(value: unknown): Record<string, unknown> {
   if (typeof value === 'string') return JSON.parse(value);
   if (value && typeof value === 'object') return value as Record<string, unknown>;
@@ -73,15 +82,26 @@ export default async function handler(request: VercelRequest, response: VercelRe
 
   try {
     const db = getAdminFirestore();
+    const identity = await authenticate(request);
+    const userSnapshot = await db.collection('users').doc(identity.uid).get();
+    const isServiceUser = userSnapshot.data()?.role === 'service';
 
     if (request.method === 'GET') {
       const id = String(request.query?.id ?? '');
       if (id) {
         const snapshot = await db.collection('reports').doc(id).get();
-        response.status(snapshot.exists ? 200 : 404).json(snapshot.exists ? snapshot.data() : { error: 'Report not found' });
+        const report = snapshot.data();
+        if (snapshot.exists && !isServiceUser && report?.reporterUid !== identity.uid) {
+          response.status(403).json({ error: 'Forbidden' });
+          return;
+        }
+        response.status(snapshot.exists ? 200 : 404).json(snapshot.exists ? report : { error: 'Report not found' });
         return;
       }
-      const snapshot = await db.collection('reports').orderBy('timestamp', 'desc').limit(100).get();
+      const query = isServiceUser
+        ? db.collection('reports').orderBy('timestamp', 'desc').limit(100)
+        : db.collection('reports').where('reporterUid', '==', identity.uid).limit(100);
+      const snapshot = await query.get();
       response.status(200).json({ reports: snapshot.docs.map(item => item.data()) });
       return;
     }
@@ -89,6 +109,10 @@ export default async function handler(request: VercelRequest, response: VercelRe
     if (request.method === 'POST') {
       const body = parseBody(request.body);
       const report = sanitizeReport((body.report ?? body) as Record<string, unknown>);
+      if (report.reporterUid !== identity.uid) {
+        response.status(403).json({ error: 'Reporter identity mismatch' });
+        return;
+      }
       await db.collection('reports').doc(report.id).set({
         ...report,
         serverUpdatedAt: FieldValue.serverTimestamp()
@@ -98,6 +122,10 @@ export default async function handler(request: VercelRequest, response: VercelRe
     }
 
     if (request.method === 'PATCH') {
+      if (!isServiceUser) {
+        response.status(403).json({ error: 'Service role required' });
+        return;
+      }
       const body = parseBody(request.body);
       const reportId = String(body.reportId ?? '');
       const service = body.service as ServiceType;
@@ -113,6 +141,9 @@ export default async function handler(request: VercelRequest, response: VercelRe
         if (!snapshot.exists) throw new Error('Report not found');
         const report = snapshot.data() as Record<string, any>;
         const currentStatus = (report.serviceStatuses?.[service] ?? report.status ?? 'pending') as ReportStatus;
+        if (status === 'responding' && report.reviewStatus === 'needs-human-review') {
+          throw new Error('Human review confirmation is required before dispatch');
+        }
         if (currentStatus !== status && !allowedTransitions[currentStatus].includes(status)) {
           throw new Error(`Invalid status transition: ${currentStatus} to ${status}`);
         }
@@ -160,7 +191,13 @@ export default async function handler(request: VercelRequest, response: VercelRe
         response.status(400).json({ error: 'reportIds are required' });
         return;
       }
-      await Promise.all(reportIds.map(id => db.collection('reports').doc(id).delete()));
+      await Promise.all(reportIds.map(async id => {
+        const ref = db.collection('reports').doc(id);
+        const snapshot = await ref.get();
+        if (snapshot.exists && (isServiceUser || snapshot.data()?.reporterUid === identity.uid)) {
+          await ref.delete();
+        }
+      }));
       response.status(200).json({ ok: true });
       return;
     }
@@ -168,6 +205,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
     response.status(405).json({ error: 'Method not allowed' });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Incident API failed';
-    response.status(message === 'Report not found' ? 404 : 500).json({ error: message });
+    const status = message === 'Report not found' ? 404 : message === 'Authentication required' ? 401 : 500;
+    response.status(status).json({ error: message });
   }
 }

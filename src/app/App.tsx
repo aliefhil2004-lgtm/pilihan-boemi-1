@@ -21,8 +21,9 @@ import { CountryPicker } from './components/CountryPicker';
 import { LanguageToggle } from './components/LanguageToggle';
 import { ArrowLeft, Globe2, PhoneCall } from 'lucide-react';
 import { analyzeEmergency } from './services/ai';
+import { buildPrototypeAssessment } from './services/prototypeAssessment';
 import { createServiceStatuses, getReportServices, getServiceStatus, type ServiceType, type StoredEmergencyReport } from './types/emergency';
-import { cleanupExpiredReports, createNextReportCode, replaceReports, resetPreviousHistoryOnce, saveReport } from './services/reportStorage';
+import { cleanupExpiredReports, createNextReportCode, replaceReports, resetPreviousHistoryOnce, saveReport, syncQueuedReports } from './services/reportStorage';
 import { startReportSync } from './services/firebaseSync';
 import {
   getFriendlyAuthError,
@@ -35,10 +36,11 @@ import {
   type UserProfile
 } from './services/auth';
 import { getAseanCountry, type AseanCountryCode } from './config/asean';
-import { getServiceContactNumber } from './config/contacts';
-import { publishCallNotification, subscribeCallNotifications, type AppCallData, type CallNotification } from './services/callNotifications';
+import { type AppCallData } from './services/callNotifications';
+import { createInAppCall, subscribeToIncomingInAppCalls, updateInAppCall } from './services/inAppCall';
 import { t as translate, type Language } from './i18n';
-import type { PrivacyRegion } from './types/emergency';
+import type { EvidenceMetadata, PrivacyRegion } from './types/emergency';
+import { anonymizePhotoPixels } from './services/privacyDetector';
 
 type Screen = 'login' | 'register' | 'home' | 'report' | 'processing' | 'result' | 'tracking' | 'service-dashboard' | 'fire-map' | 'history' | 'chat' | 'profile' | 'call';
 type UserRole = 'civilian' | 'service' | null;
@@ -83,6 +85,14 @@ interface EmergencyData {
   services?: ServiceType[];
   annotatedImage?: string;
   privacyRegions?: PrivacyRegion[];
+  aiConfidence?: number;
+  reviewStatus?: StoredEmergencyReport['reviewStatus'];
+  reviewReason?: string;
+  responseMetrics?: StoredEmergencyReport['responseMetrics'];
+  evidenceVerification?: StoredEmergencyReport['evidenceVerification'];
+  anonymizationStatus?: StoredEmergencyReport['anonymizationStatus'];
+  offlineSyncStatus?: StoredEmergencyReport['offlineSyncStatus'];
+  evidenceMetadata?: EvidenceMetadata;
 }
 
 interface UserLocation {
@@ -158,7 +168,6 @@ export default function App() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
   const [isProcessingReady, setIsProcessingReady] = useState(false);
-  const seenCallNotificationRef = useRef<string | null>(null);
   const seenDeclineNotificationRef = useRef<Set<string>>(new Set(
     typeof window === 'undefined'
       ? []
@@ -169,6 +178,7 @@ export default function App() {
     description: string;
     location: string;
     coords?: { lat: number; lng: number };
+    evidenceMetadata?: EvidenceMetadata;
   } | null>(null);
   const country = getAseanCountry(countryCode);
   const [userLocation, setUserLocation] = useState<UserLocation>(() => ({
@@ -195,10 +205,14 @@ export default function App() {
   useEffect(() => {
     resetPreviousHistoryOnce();
     cleanupExpiredReports();
+    syncQueuedReports();
     const stopFirebaseSync = startReportSync();
+    const handleOnline = () => syncQueuedReports();
+    window.addEventListener('online', handleOnline);
     const cleanupInterval = setInterval(cleanupExpiredReports, 60 * 1000);
     const splashTimer = window.setTimeout(() => setShowSplash(false), 1200);
     return () => {
+      window.removeEventListener('online', handleOnline);
       clearInterval(cleanupInterval);
       clearTimeout(splashTimer);
       stopFirebaseSync();
@@ -356,6 +370,7 @@ export default function App() {
     description: string;
     location: string;
     coords?: { lat: number; lng: number };
+    evidenceMetadata?: EvidenceMetadata;
   }) => {
     if (isSubmittingReport) return;
 
@@ -370,7 +385,9 @@ export default function App() {
     setCurrentScreen('processing');
 
     try {
+      const analysisStartedAtMs = Date.now();
       const aiResult = await analyzeEmergency(data.description, data.photo);
+      const analysisCompletedAtMs = Date.now();
       const severityScore =
         'severityScore' in aiResult && typeof aiResult.severityScore === 'number'
           ? aiResult.severityScore
@@ -398,12 +415,32 @@ export default function App() {
       const reportCode = createNextReportCode();
       const submittedAt = new Date().toISOString();
       const reportCoords = data.coords ?? userLocation.coords;
+      const identityRegions = (aiResult.privacyRegions ?? []).filter(region =>
+        /face|license plate|number plate/i.test(region.label)
+      );
+      const anonymizedPhoto = data.photo
+        ? await anonymizePhotoPixels(
+            aiResult.anonymizedImage ?? data.photo,
+            identityRegions
+          )
+        : null;
+      const prototypeAssessment = buildPrototypeAssessment({
+        aiResult,
+        description: data.description,
+        photo: anonymizedPhoto,
+        coords: reportCoords,
+        privacyRegions: aiResult.privacyRegions,
+        evidenceMetadata: data.evidenceMetadata,
+        analysisStartedAtMs,
+        analysisCompletedAtMs
+      });
       if (pendingReportRef.current !== data) return;
       setUserLocation({ address: data.location, coords: reportCoords });
       setSelectedService(aiResult.service);
 
       const reportData: EmergencyData = {
         ...data,
+        photo: anonymizedPhoto,
         coords: reportCoords,
         injuryScale: severityScore,
         priority:
@@ -414,8 +451,10 @@ export default function App() {
             : 'Low',
         emergencyType: aiResult.type,
         detectedIndicators,
-        annotatedImage: aiResult.annotatedImage,
+        annotatedImage: anonymizedPhoto ?? aiResult.annotatedImage,
         privacyRegions: aiResult.privacyRegions,
+        evidenceMetadata: data.evidenceMetadata,
+        ...prototypeAssessment,
         id: reportId,
         reportCode,
         submittedAt,
@@ -427,7 +466,7 @@ export default function App() {
       const newReport: StoredEmergencyReport = {
         id: reportId,
         reportCode,
-        photo: data.photo,
+        photo: anonymizedPhoto,
         description: data.description,
         location: data.location,
         coords: reportCoords,
@@ -445,6 +484,8 @@ export default function App() {
         injuryScale: severityScore,
         detectedIndicators,
         privacyRegions: aiResult.privacyRegions,
+        evidenceMetadata: data.evidenceMetadata,
+        ...prototypeAssessment,
         countryCode: country.code,
         timestamp: submittedAt,
         status: 'pending',
@@ -452,13 +493,31 @@ export default function App() {
         reporterName: userProfile?.name,
         reporterEmail: userProfile?.email,
         reporterPhone: userProfile?.phone,
-        auditTrail: [{
-          id: `${reportId}-created`,
-          service: aiResult.service,
-          action: 'report_created',
-          label: 'Emergency report submitted',
-          timestamp: submittedAt
-        }]
+        auditTrail: [
+          {
+            id: `${reportId}-created`,
+            service: aiResult.service,
+            action: 'report_created',
+            label: 'Emergency report submitted',
+            timestamp: submittedAt
+          },
+          {
+            id: `${reportId}-triage`,
+            service: aiResult.service,
+            action: 'ai_triage_completed',
+            label: `AI triage completed with ${prototypeAssessment.aiConfidence}% confidence`,
+            timestamp: submittedAt
+          },
+          ...(prototypeAssessment.reviewStatus === 'needs-human-review'
+            ? [{
+                id: `${reportId}-manual-review`,
+                service: aiResult.service,
+                action: 'manual_review_required' as const,
+                label: prototypeAssessment.reviewReason ?? 'Operator review required before final dispatch',
+                timestamp: submittedAt
+              }]
+            : [])
+        ]
       };
 
       saveReport(newReport);
@@ -521,34 +580,31 @@ const handleOpenChat = (reportId: string, returnScreen: Screen = currentScreen) 
   setCurrentScreen('chat');
 };
 
-const createIncomingCallData = (notification: CallNotification, receiverRole: Exclude<UserRole, null>): AppCallData => ({
-  contactName: notification.callerName || (notification.fromRole === 'civilian' ? 'Civilian Reporter' : 'Emergency Service'),
-  contactRole: notification.fromRole === 'civilian' ? 'Civilian' : notification.callData.contactRole,
-  serviceType: notification.callData.serviceType,
-  serviceTypes: notification.callData.serviceTypes,
-  callerRole: receiverRole,
-  phoneNumber: notification.callerPhone ?? notification.callData.phoneNumber
-});
-
 const handleOpenCall = (
   data: AppCallData,
-  returnScreen: Screen = currentScreen,
-  options: { notifyPeer?: boolean } = {}
+  returnScreen: Screen = currentScreen
 ) => {
-  setCallData(data);
-  setCallReturnScreen(returnScreen);
-  setCurrentScreen('call');
+  if (data.mode === 'hotline') {
+    setCallData(data);
+    setCallReturnScreen(returnScreen);
+    setCurrentScreen('call');
+    return;
+  }
 
-  if (options.notifyPeer === false) return;
-  publishCallNotification({
-    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    createdAt: Date.now(),
+  void createInAppCall({
+    reportId: data.reportId,
+    fromUid: userProfile?.uid,
+    targetUid: data.targetUid,
     fromRole: data.callerRole,
     toRole: data.callerRole === 'civilian' ? 'service' : 'civilian',
     callerName: userProfile?.name || (data.callerRole === 'civilian' ? 'Civilian Reporter' : 'Emergency Service'),
-    callerPhone: userProfile?.phone,
-    callData: data
-  });
+    serviceTypes: data.serviceTypes
+  }).then(call => {
+    const nextData = { ...data, mode: 'in-app' as const, callId: call.id, incoming: false };
+    setCallData(nextData);
+    setCallReturnScreen(returnScreen);
+    setCurrentScreen('call');
+  }).catch(() => toast.error('Unable to start in-app call.'));
 };
 
 const handleTrackReport = (report: StoredEmergencyReport) => {
@@ -583,37 +639,39 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
 
   useEffect(() => {
     if (!userRole) return;
-
-    return subscribeCallNotifications(notification => {
-      if (seenCallNotificationRef.current === notification.id) return;
-      seenCallNotificationRef.current = notification.id;
-      if (notification.toRole !== userRole || notification.fromRole === userRole) return;
-      if (Date.now() - notification.createdAt > 30000) return;
+    return subscribeToIncomingInAppCalls(userRole, userProfile?.uid, incoming => {
       if (
         userRole === 'service' &&
-        notification.callData.serviceTypes?.length &&
-        !notification.callData.serviceTypes.includes(selectedService)
+        incoming.serviceTypes?.length &&
+        !incoming.serviceTypes.includes(selectedService)
       ) {
         return;
       }
 
-      const incomingCall = createIncomingCallData(notification, userRole);
       toast.custom(toastId => (
         <div className="pointer-events-auto flex w-[340px] items-center gap-3 rounded-2xl border border-[#dbe4ec] bg-white p-3 text-[#0b3850] shadow-[0_16px_36px_rgba(12,50,73,0.18)]">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#0b3850] text-white">
             <PhoneCall className="h-5 w-5" />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-[13px] font-extrabold leading-5">Incoming call</p>
-            <p className="truncate text-[12px] font-semibold leading-4 text-[#64748b]">
-              {notification.callerName || incomingCall.contactName} calling {userRole === 'service' ? 'services' : 'citizen'}
-            </p>
+            <p className="text-[13px] font-extrabold leading-5">Incoming in-app call</p>
+            <p className="truncate text-[12px] font-semibold leading-4 text-[#64748b]">{incoming.callerName}</p>
           </div>
           <button
             type="button"
             onClick={() => {
               toast.dismiss(toastId);
-              setCallData(incomingCall);
+              setCallData({
+                mode: 'in-app',
+                callId: incoming.id,
+                reportId: incoming.reportId,
+                incoming: true,
+                contactName: incoming.callerName,
+                contactRole: incoming.fromRole === 'civilian' ? 'Citizen Reporter' : 'Emergency Unit',
+                serviceTypes: incoming.serviceTypes,
+                serviceType: incoming.serviceTypes?.[0],
+                callerRole: userRole
+              });
               setCallReturnScreen(currentScreen);
               setCurrentScreen('call');
             }}
@@ -621,10 +679,20 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
           >
             Answer
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              toast.dismiss(toastId);
+              void updateInAppCall(incoming.id, { status: 'declined' });
+            }}
+            className="h-9 rounded-xl bg-[#c9161d] px-3 text-[12px] font-extrabold text-white"
+          >
+            Decline
+          </button>
         </div>
-      ), { duration: 12000 });
+      ), { duration: 30000 });
     });
-  }, [currentScreen, selectedService, userRole]);
+  }, [currentScreen, selectedService, userProfile?.uid, userRole]);
 
   useEffect(() => {
     if (userRole !== 'civilian' || !userProfile?.uid) return;
@@ -676,7 +744,11 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
     currentScreen !== 'register';
   const showNavigation =
     userRole === 'civilian'
-      ? currentScreen !== 'service-dashboard' && currentScreen !== 'processing' && currentScreen !== 'fire-map' && currentScreen !== 'call'
+      ? currentScreen !== 'service-dashboard' &&
+        currentScreen !== 'processing' &&
+        currentScreen !== 'fire-map' &&
+        currentScreen !== 'call' &&
+        currentScreen !== 'chat'
       : userRole === 'service' && (currentScreen === 'home' || currentScreen === 'service-dashboard' || currentScreen === 'profile');
   
   // Show login or register screen if not logged in
@@ -749,6 +821,7 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
           onServiceSelect={handleServiceSelect}
           onOpenDangerMap={() => setCurrentScreen('fire-map')}
           onCallEmergency={() => handleOpenCall({
+            mode: 'hotline',
             contactName: 'Emergency Dispatch',
             contactRole: 'Emergency Hotline',
             serviceType: 'ambulance',
@@ -792,6 +865,8 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
           priority={emergencyData.priority || 'Medium'}
           recommendedService={selectedService}
           recommendedServices={emergencyData.services ?? [selectedService]}
+          countryName={country.name}
+          emergencyNumbers={country.emergency}
           reportId={emergencyData.id}
           reportCode={emergencyData.reportCode}
           submittedAt={emergencyData.submittedAt}
@@ -800,9 +875,16 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
           detectedIndicators={emergencyData.detectedIndicators}
           annotatedImage={emergencyData.annotatedImage}
           privacyRegions={emergencyData.privacyRegions}
+          aiConfidence={emergencyData.aiConfidence}
+          reviewStatus={emergencyData.reviewStatus}
+          reviewReason={emergencyData.reviewReason}
+          responseMetrics={emergencyData.responseMetrics}
+          evidenceVerification={emergencyData.evidenceVerification}
+          anonymizationStatus={emergencyData.anonymizationStatus}
+          offlineSyncStatus={emergencyData.offlineSyncStatus}
           isFalseReport={Boolean((emergencyData as { isFalseReport?: boolean }).isFalseReport)}
           falseReportReason={(emergencyData as { falseReportReason?: string }).falseReportReason}
-          servicePhoneNumber={getServiceContactNumber(primaryEmergencyService)}
+          servicePhoneNumber={country.emergency[primaryEmergencyService]}
           canViewSensitiveMedia={canViewSensitiveMedia}
           onCancelReport={handleCancelSubmittedReport}
           onBackHome={handleResultBackHome}
@@ -810,6 +892,8 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
             if (emergencyData.id) handleOpenChat(emergencyData.id, 'result');
           }}
           onCallResponder={() => handleOpenCall({
+            mode: 'in-app',
+            reportId: emergencyData.id,
             contactName: 'Emergency Dispatch',
             contactRole: (emergencyData.services ?? [primaryEmergencyService])
               .map(service => service === 'ambulance' ? 'Paramedic' : service === 'fire' ? 'Fire Fighter' : 'Police')
@@ -817,7 +901,7 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
             serviceType: primaryEmergencyService,
             serviceTypes: emergencyData.services ?? [primaryEmergencyService],
             callerRole: 'civilian',
-            phoneNumber: getServiceContactNumber(primaryEmergencyService)
+            phoneNumber: country.emergency[primaryEmergencyService]
           }, 'result')}
           onViewDetails={() => {
             setHistoryReportId(emergencyData.id ?? null);
@@ -837,7 +921,7 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
           currentUserId={userProfile?.uid}
           onOpenChat={() => emergencyData.id && handleOpenChat(emergencyData.id, 'tracking')}
           onBack={() => setCurrentScreen('history')}
-          servicePhoneNumber={getServiceContactNumber(primaryEmergencyService)}
+          servicePhoneNumber={country.emergency[primaryEmergencyService]}
         />
       )}
 
@@ -853,12 +937,15 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
           onOpenProfile={() => setCurrentScreen('profile')}
           onOpenChat={reportId => handleOpenChat(reportId, 'service-dashboard')}
           onCallCitizen={(report) => handleOpenCall({
+            mode: 'in-app',
+            reportId: report.id,
+            targetUid: report.reporterUid,
             contactName: report.reporterName || 'Citizen Reporter',
             contactRole: 'Civilian',
             serviceType: selectedService,
             serviceTypes: [selectedService],
             callerRole: 'service',
-            phoneNumber: userProfile?.phone
+            phoneNumber: report.reporterPhone
           }, 'service-dashboard')}
         />
       )}
@@ -880,6 +967,9 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
             const services = getReportServices(report);
             const primaryService = services[0] ?? report.service ?? selectedService;
             handleOpenCall({
+              mode: 'in-app',
+              reportId: report.id,
+              targetUid: userRole === 'service' ? report.reporterUid : undefined,
               contactName: userRole === 'civilian' ? 'Emergency Dispatch' : report.reporterName || 'Citizen Reporter',
               contactRole: userRole === 'civilian'
                 ? services.map(service => service === 'ambulance' ? 'Medical Unit' : service === 'fire' ? 'Fire Unit' : 'Police Unit').join(' & ')
@@ -888,7 +978,7 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
               serviceTypes: services,
               callerRole: userRole === 'civilian' ? 'civilian' : 'service',
               phoneNumber: userRole === 'civilian'
-                ? getServiceContactNumber(primaryService)
+                ? getAseanCountry(report.countryCode ?? country.code).emergency[primaryService]
                 : report.reporterPhone ?? userProfile?.phone
             }, 'history');
           }}

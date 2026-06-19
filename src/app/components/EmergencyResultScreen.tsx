@@ -1,4 +1,4 @@
-import { ArrowLeft, CheckCircle2, Clock, MapPin, MessageSquare, Phone, Radio } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Clock, MapPin, MessageSquare, Phone, Radio, ShieldCheck, WifiOff } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { cleanupExpiredReports } from '../services/reportStorage';
@@ -15,6 +15,8 @@ interface EmergencyResultScreenProps {
   priority: 'High' | 'Medium' | 'Low';
   recommendedService: ServiceType;
   recommendedServices: ServiceType[];
+  countryName?: string;
+  emergencyNumbers?: Partial<Record<ServiceType, string>>;
   reportId?: string;
   reportCode?: string;
   submittedAt?: string;
@@ -23,6 +25,31 @@ interface EmergencyResultScreenProps {
   detectedIndicators?: string[];
   annotatedImage?: string;
   privacyRegions?: PrivacyRegion[];
+  aiConfidence?: number;
+  reviewStatus?: 'auto-routed' | 'needs-human-review' | 'operator-confirmed';
+  reviewReason?: string;
+  responseMetrics?: {
+    submittedSeconds: number;
+    aiTriageSeconds: number;
+    routedSeconds: number;
+    dispatchTargetSeconds: number;
+    estimatedTriageSecondsSaved: number;
+    jakartaBaselineSeconds: number;
+    simulatedTotalSeconds: number;
+    measuredAt: string;
+    stepSavings?: Array<{
+      step: string;
+      manualSeconds: number;
+      automatedSeconds: number;
+      savedSeconds: number;
+    }>;
+  };
+  evidenceVerification?: {
+    score: number;
+    checks: Array<{ label: string; passed: boolean; points: number }>;
+  };
+  anonymizationStatus?: 'not-needed' | 'queued' | 'anonymized';
+  offlineSyncStatus?: 'online-synced' | 'queued-for-sync' | 'syncing' | 'sync-failed';
   isFalseReport: boolean;
   falseReportReason?: string;
   servicePhoneNumber: string;
@@ -40,6 +67,8 @@ export function EmergencyResultScreen({
   emergencyType,
   priority,
   recommendedServices,
+  countryName,
+  emergencyNumbers,
   reportId,
   reportCode,
   submittedAt,
@@ -48,6 +77,13 @@ export function EmergencyResultScreen({
   detectedIndicators,
   annotatedImage,
   privacyRegions,
+  aiConfidence,
+  reviewStatus,
+  reviewReason,
+  responseMetrics,
+  evidenceVerification,
+  anonymizationStatus,
+  offlineSyncStatus,
   isFalseReport,
   falseReportReason,
   servicePhoneNumber,
@@ -108,30 +144,18 @@ export function EmergencyResultScreen({
     };
   }, [isFalseReport, reportId]);
 
-  const notifyWaitingForAcceptance = (feature = 'This feature') => {
-    toast.info(`${feature} can be accessed after emergency services accept the report.`);
-  };
-
   const notifyWaitingForLiveGps = () => {
     toast.info('Live tracking can be accessed after emergency services share live GPS.');
   };
 
   const handleOpenChat = () => {
     if (isFalseReport) return;
-    if (!isAccepted) {
-      notifyWaitingForAcceptance('Chat');
-      return;
-    }
     onOpenChat();
   };
 
   const handleCallResponder = () => {
     if (isFalseReport) return;
-    if (!isAccepted) {
-      notifyWaitingForAcceptance('Phone call');
-      return;
-    }
-    toast.success(`Calling assigned responder at ${servicePhoneNumber}`);
+    toast.success(`Opening emergency hotline ${servicePhoneNumber}`);
     onCallResponder();
   };
 
@@ -217,6 +241,19 @@ export function EmergencyResultScreen({
               ))}
             </div>
 
+            {emergencyNumbers && (
+              <div className="mt-3 rounded-xl bg-[#eef8ff] p-3 text-[12px] leading-5 text-[#0b3850]">
+                <p className="font-extrabold">Local emergency routing{countryName ? ` - ${countryName}` : ''}</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(recommendedServices.length ? recommendedServices : ['fire' as ServiceType]).map(service => (
+                    <span key={service} className="rounded-full bg-white px-2.5 py-1 font-bold text-[#475569]">
+                      {getServiceDisplayLabel(service)}: {emergencyNumbers[service] ?? 'N/A'}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="mt-5 space-y-3 text-[16px] leading-5">
               <p className="flex items-center gap-3"><MapPin className="h-[18px] w-[18px] shrink-0" /><span>{location}</span></p>
               <p className="flex items-center gap-3"><Clock className="h-[18px] w-[18px] shrink-0" /><span>{submittedTimeLabel}</span></p>
@@ -233,11 +270,99 @@ export function EmergencyResultScreen({
               ))}
             </div>
 
+            <div className="mt-5 rounded-xl border border-[#dbeafe] bg-[#f8fbff] p-4 text-[#0b3850]">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-5 w-5 text-[#2563eb]" />
+                  <p className="text-[15px] font-extrabold">AI Triage Control</p>
+                </div>
+                <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                  reviewStatus === 'needs-human-review'
+                    ? 'bg-amber-100 text-amber-800'
+                    : reviewStatus === 'operator-confirmed'
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'bg-emerald-100 text-emerald-700'
+                }`}>
+                  {reviewStatus === 'needs-human-review'
+                    ? 'Human Review'
+                    : reviewStatus === 'operator-confirmed'
+                    ? 'Operator Confirmed'
+                    : 'Auto Routed'}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[12px]">
+                <div className="rounded-lg bg-white p-3">
+                  <p className="text-[#64748b]">AI confidence</p>
+                  <p className="mt-1 text-[20px] font-extrabold">{aiConfidence ?? 0}%</p>
+                </div>
+                <div className="rounded-lg bg-white p-3">
+                  <p className="text-[#64748b]">Evidence score</p>
+                  <p className="mt-1 text-[20px] font-extrabold">{evidenceVerification?.score ?? 0}/100</p>
+                </div>
+              </div>
+              {reviewReason && (
+                <p className="mt-3 text-[12px] leading-5 text-[#475569]">{reviewReason}</p>
+              )}
+              <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold">
+                <span className="rounded-full bg-white px-2.5 py-1 text-[#475569]">
+                  Anonymization: {anonymizationStatus === 'queued' ? 'Queued' : anonymizationStatus === 'anonymized' ? 'Done' : 'Not needed'}
+                </span>
+                <span className="rounded-full bg-white px-2.5 py-1 text-[#475569]">
+                  Sync: {offlineSyncStatus === 'queued-for-sync'
+                    ? 'Pending signal'
+                    : offlineSyncStatus === 'syncing'
+                    ? 'Syncing'
+                    : offlineSyncStatus === 'sync-failed'
+                    ? 'Retry queued'
+                    : 'Verified online'}
+                </span>
+              </div>
+            </div>
+
             <div className="mt-5 rounded-xl bg-[#f7f7f7] p-4 text-[#0b3850]">
               <p className="mb-4 text-[20px] font-extrabold leading-7">Response Timeline</p>
-              <div className="border-l-4 border-[#0b3850] py-1 pl-7">
-                <p className="text-[16px] leading-6">Emergency report submitted</p>
-                <p className="text-[15px] leading-6">{submittedTimeLabel}</p>
+              <div className="space-y-3 border-l-4 border-[#0b3850] py-1 pl-7">
+                <div>
+                  <p className="text-[16px] font-bold leading-6">Emergency report submitted</p>
+                  <p className="text-[15px] leading-6">{submittedTimeLabel}</p>
+                </div>
+                {responseMetrics && (
+                  <>
+                    <div>
+                      <p className="text-[14px] font-bold leading-5">AI triage completed</p>
+                      <p className="text-[13px] text-[#64748b]">+{responseMetrics.aiTriageSeconds}s from submission</p>
+                    </div>
+                    <div>
+                      <p className="text-[14px] font-bold leading-5">Routed to service dashboard</p>
+                      <p className="text-[13px] text-[#64748b]">+{responseMetrics.routedSeconds}s, estimated {responseMetrics.estimatedTriageSecondsSaved}s saved in triage</p>
+                    </div>
+                    <div>
+                      <p className="text-[14px] font-bold leading-5">Dispatch target</p>
+                      <p className="text-[13px] text-[#64748b]">Operator decision target: {responseMetrics.dispatchTargetSeconds}s</p>
+                    </div>
+                    <div className="rounded-lg bg-white p-2">
+                      <p className="text-[14px] font-bold leading-5">Jakarta response simulation</p>
+                      <p className="text-[13px] text-[#64748b]">
+                        24-minute baseline compared with {responseMetrics.simulatedTotalSeconds}s submission-to-dispatch target.
+                        This is a prototype estimate, not an operational SLA.
+                      </p>
+                    </div>
+                    {responseMetrics.stepSavings?.map(step => (
+                      <div key={step.step} className="rounded-lg bg-white p-2">
+                        <p className="text-[13px] font-bold">{step.step}</p>
+                        <p className="text-[12px] text-[#64748b]">
+                          {step.automatedSeconds}s automated vs {step.manualSeconds}s simulated manual; {step.savedSeconds}s estimated saved
+                        </p>
+                      </div>
+                    ))}
+                  </>
+                )}
+                {offlineSyncStatus === 'queued-for-sync' && (
+                  <p className="flex items-center gap-2 rounded-lg bg-amber-50 p-2 text-[12px] font-bold text-amber-800">
+                    <WifiOff className="h-4 w-4" />
+                    Offline-first queue active. Report syncs when signal returns.
+                  </p>
+                )}
               </div>
             </div>
           </article>

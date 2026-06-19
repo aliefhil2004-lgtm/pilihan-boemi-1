@@ -13,6 +13,10 @@ export interface NlpEmergencyResult {
   services?: ServiceType[];
 }
 
+const burnInjuryPattern = /(luka bakar|luka kebakar|kulit terbakar|tubuh terbakar|badan kebakar|tangan kebakar|melepuh|tersiram air panas|terkena air panas|burn wound|burn injury|burned skin|scald)/i;
+const activeFirePattern = /(kebakaran|kobaran api|api menyala|api besar|asap tebal|rumah terbakar|gedung terbakar|bangunan terbakar|kendaraan terbakar|fire|flame|active fire|heavy smoke|house on fire|building on fire|vehicle on fire)/i;
+const intentionalViolencePattern = /(disiram air keras|disiram bensin|sengaja dibakar|dibakar orang|assault|attack|weapon|penyerangan|senjata)/i;
+
 const labelMapping: Record<string, { service: ServiceType; type: string; baseScore: number; services?: ServiceType[] }> = {
   'medical emergency': { service: 'ambulance', type: 'Medical Emergency', baseScore: 7 },
   'fire rescue emergency': { service: 'fire', type: 'Fire Emergency', baseScore: 7 },
@@ -101,7 +105,27 @@ const localNlpRules: Array<{
 }> = [
   ...invisibleEmergencyRules,
   {
-    pattern: /(pendarahan|berdarah|darah|luka berat|luka parah|patah tulang|kecelakaan|tabrakan|tertabrak|korban|pingsan|tidak sadar|injury|bleeding|wound|fracture|accident|crash|unconscious)/i,
+    pattern: /(disiram air keras|disiram bensin|sengaja dibakar|dibakar orang|acid attack|set on fire by|deliberately burned)/i,
+    result: {
+      type: 'Intentional Burn Assault',
+      service: 'police',
+      services: ['police', 'ambulance'],
+      score: 9,
+      indicators: ['Local NLP rule: explicit intentional violence requires police and medical response']
+    }
+  },
+  {
+    pattern: burnInjuryPattern,
+    result: {
+      type: 'Burn Injury Medical Emergency',
+      service: 'ambulance',
+      services: ['ambulance'],
+      score: 8,
+      indicators: ['Local NLP rule: burn injury needs medical care; cause is not inferred']
+    }
+  },
+  {
+    pattern: /(pendarahan|berdarah|darah|luka berat|luka parah|patah tulang|kecelakaan|tabrakan|tertabrak|korban (cedera|luka|berdarah|pingsan|tidak sadar)|pingsan|tidak sadar|injury|bleeding|wound|fracture|accident|crash|unconscious)/i,
     result: {
       type: 'Medical Emergency',
       service: 'ambulance',
@@ -111,7 +135,7 @@ const localNlpRules: Array<{
     }
   },
   {
-    pattern: /(kebakaran|api|asap|terbakar|ledakan|meledak|fire|flame|smoke|burning|explosion)/i,
+    pattern: /(kebakaran|kobaran api|api menyala|api besar|asap tebal|rumah terbakar|gedung terbakar|bangunan terbakar|kendaraan terbakar|ledakan|meledak|fire|flame|active fire|heavy smoke|house on fire|building on fire|vehicle on fire|explosion)/i,
     result: {
       type: 'Fire Emergency',
       service: 'fire',
@@ -150,6 +174,10 @@ function analyzeTextWithLocalSafetyRules(text: string): NlpEmergencyResult | nul
 export async function analyzeEmergencyTextWithNlp(text: string): Promise<NlpEmergencyResult | null> {
   if (!text.trim()) return null;
   const localResult = analyzeTextWithLocalSafetyRules(text);
+  if (burnInjuryPattern.test(text) && !activeFirePattern.test(text) && !intentionalViolencePattern.test(text)) {
+    return localResult;
+  }
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return localResult;
 
   try {
     const response = await fetch('/api/nlp', {

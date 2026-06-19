@@ -9,7 +9,7 @@ interface VercelResponse {
   setHeader: (name: string, value: string) => void;
 }
 
-const HF_MODEL = process.env.HF_NLP_MODEL || 'Alief2004/nlp_p2a';
+const HF_MODEL = process.env.HF_NLP_MODEL || 'joeddav/xlm-roberta-large-xnli';
 const HF_NLP_API_URL = process.env.HF_NLP_API_URL;
 const candidateLabels = [
   'medical emergency',
@@ -27,6 +27,8 @@ const candidateLabels = [
   'poisoning or chemical exposure emergency'
 ];
 
+const burnInjuryPattern = /(luka bakar|luka kebakar|kulit terbakar|tubuh terbakar|badan kebakar|tangan kebakar|melepuh|tersiram air panas|terkena air panas|burn wound|burn injury|burned skin|scald)/i;
+
 const fallbackRules: Array<{
   pattern: RegExp;
   result: {
@@ -38,7 +40,87 @@ const fallbackRules: Array<{
   };
 }> = [
   {
-    pattern: /(pendarahan|berdarah|darah|luka berat|luka parah|patah tulang|kecelakaan|tabrakan|tertabrak|korban|pingsan|tidak sadar|injury|bleeding|wound|fracture|accident|crash|unconscious)/i,
+    pattern: /(disiram air keras|disiram bensin|sengaja dibakar|dibakar orang|acid attack|set on fire by|deliberately burned)/i,
+    result: {
+      type: 'Intentional Burn Assault',
+      service: 'police',
+      services: ['police', 'ambulance'],
+      score: 9,
+      indicators: ['API fallback NLP: explicit intentional violence requires police and medical response']
+    }
+  },
+  {
+    pattern: burnInjuryPattern,
+    result: {
+      type: 'Burn Injury Medical Emergency',
+      service: 'ambulance',
+      services: ['ambulance'],
+      score: 8,
+      indicators: ['API fallback NLP: burn injury needs medical care; cause is not inferred']
+    }
+  },
+  {
+    pattern: /(buaya|crocodile|harimau|tiger|beruang|bear|lion|singa|serigala|wolf|macan|leopard|panther|komodo|hewan buas besar|hewan liar besar|predator besar)/i,
+    result: {
+      type: 'Police Ranger - Dangerous Animal',
+      service: 'police',
+      services: ['police'],
+      score: 8,
+      indicators: ['API fallback NLP: large dangerous animal needs police-ranger response']
+    }
+  },
+  {
+    pattern: /(ular|snake|cobra|kobra|python|piton|musang|civet|anjing galak|aggressive dog|rabid dog|biawak|monitor lizard|tawon|lebah|sarang tawon|wasp nest|hewan kecil berbahaya|animal rescue|hewan terjebak|kucing terjebak|anjing terjebak)/i,
+    result: {
+      type: 'Firefighter - Animal Rescue',
+      service: 'fire',
+      services: ['fire'],
+      score: 6,
+      indicators: ['API fallback NLP: firefighter animal rescue needed']
+    }
+  },
+  {
+    pattern: /(kebocoran gas|gas bocor|bau gas|gas menyengat|gas leak|gas odor|carbon monoxide|karbon monoksida|hazmat|bau kimia|asap kimia)/i,
+    result: {
+      type: 'Gas Leak / Hazmat Emergency',
+      service: 'fire',
+      services: ['fire', 'ambulance'],
+      score: 9,
+      indicators: ['API fallback NLP: possible gas leak or hazardous material exposure']
+    }
+  },
+  {
+    pattern: /(nyeri dada|dada tertindih|serangan jantung|henti jantung|heart attack|cardiac|keringat dingin|menjalar ke lengan|stroke|wajah mencong|bicara pelo|lemah sebelah|slurred speech|face drooping)/i,
+    result: {
+      type: 'Cardiac / Stroke Emergency',
+      service: 'ambulance',
+      services: ['ambulance'],
+      score: 9,
+      indicators: ['API fallback NLP: possible heart attack or stroke symptoms']
+    }
+  },
+  {
+    pattern: /(sesak napas|sulit bernapas|tidak bisa bernapas|tidak bernapas|napas berhenti|bibir.*biru|bibir.*membiru|asma parah|respiratory|difficulty breathing|not breathing)/i,
+    result: {
+      type: 'Respiratory Distress Emergency',
+      service: 'ambulance',
+      services: ['ambulance'],
+      score: 9,
+      indicators: ['API fallback NLP: respiratory distress reported in text']
+    }
+  },
+  {
+    pattern: /(keracunan|tertelan obat|overdose|poison|poisoning|muntah hebat|paparan kimia|chemical exposure|terhirup racun|menghirup asap kimia)/i,
+    result: {
+      type: 'Poisoning / Chemical Exposure',
+      service: 'ambulance',
+      services: ['ambulance', 'fire'],
+      score: 8,
+      indicators: ['API fallback NLP: possible poisoning or chemical exposure']
+    }
+  },
+  {
+    pattern: /(pendarahan|berdarah|darah|luka berat|luka parah|patah tulang|kecelakaan|tabrakan|tertabrak|korban (cedera|luka|berdarah|pingsan|tidak sadar)|pingsan|tidak sadar|injury|bleeding|wound|fracture|accident|crash|unconscious)/i,
     result: {
       type: 'Medical Emergency',
       service: 'ambulance',
@@ -48,7 +130,7 @@ const fallbackRules: Array<{
     }
   },
   {
-    pattern: /(kebakaran|api|asap|terbakar|ledakan|meledak|fire|flame|smoke|burning|explosion)/i,
+    pattern: /(kebakaran|kobaran api|api menyala|api besar|asap tebal|rumah terbakar|gedung terbakar|bangunan terbakar|kendaraan terbakar|ledakan|meledak|fire|flame|active fire|heavy smoke|house on fire|building on fire|vehicle on fire|explosion)/i,
     result: {
       type: 'Fire Emergency',
       service: 'fire',
@@ -65,26 +147,6 @@ const fallbackRules: Array<{
       services: ['police'],
       score: 8,
       indicators: ['API fallback NLP: police or security response needed']
-    }
-  },
-  {
-    pattern: /(buaya|crocodile|harimau|tiger|beruang|bear|lion|singa|serigala|wolf|macan|leopard|panther|komodo|hewan buas besar|hewan liar besar|predator besar)/i,
-    result: {
-      type: 'Police Ranger - Dangerous Animal',
-      service: 'police',
-      services: ['police'],
-      score: 8,
-      indicators: ['API fallback NLP: large dangerous animal needs police-ranger response']
-    }
-  },
-  {
-    pattern: /(ular|snake|cobra|kobra|python|piton|musang|civet|anjing galak|aggressive dog|rabid dog|biawak|monitor lizard|tawon|lebah|sarang tawon|wasp nest|animal rescue|hewan terjebak|kucing terjebak|anjing terjebak)/i,
-    result: {
-      type: 'Firefighter - Animal Rescue',
-      service: 'fire',
-      services: ['fire'],
-      score: 6,
-      indicators: ['API fallback NLP: firefighter animal rescue needed']
     }
   },
   {

@@ -1,11 +1,12 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { ArrowLeft, Check, CirclePlus, Phone, Send, Smile, User } from 'lucide-react';
+import { ArrowLeft, Check, CirclePlus, MessageSquare, Phone, Send, Smile, User } from 'lucide-react';
 import { toast } from 'sonner';
 import { getMessages, sendMessage, type ChatMessage } from '../services/chat';
 import type { ServiceType } from '../types/emergency';
 import { startChatSync } from '../services/firebaseSync';
 import { cleanupExpiredReports } from '../services/reportStorage';
-import { citizenContactNumber, getServiceContactNumber } from '../config/contacts';
+import { citizenContactNumber } from '../config/contacts';
+import { getAseanCountry, type AseanCountryCode } from '../config/asean';
 
 interface ChatScreenProps {
   reportId: string;
@@ -20,6 +21,9 @@ interface ChatScreenProps {
     serviceTypes?: ServiceType[];
     callerRole: 'civilian' | 'service';
     phoneNumber?: string;
+    mode?: 'hotline' | 'in-app';
+    reportId?: string;
+    targetUid?: string;
   }) => void;
   onBack: () => void;
 }
@@ -41,11 +45,13 @@ export function ChatScreen({ reportId, userRole, serviceType, currentUserName, s
   const [text, setText] = useState('');
   const [reporterPhone, setReporterPhone] = useState<string | null>(null);
   const [reporterName, setReporterName] = useState('Mytha Floyen');
+  const [reporterUid, setReporterUid] = useState<string | undefined>();
+  const [reportCountryCode, setReportCountryCode] = useState<AseanCountryCode>('ID');
   const activeService = serviceType ?? 'ambulance';
   const responderName = serviceDisplayName?.trim() || serviceNames[activeService];
   const chatTitle = userRole === 'civilian' ? responderName : reporterName;
   const counterpartyPhone = userRole === 'civilian'
-    ? getServiceContactNumber(activeService)
+    ? getAseanCountry(reportCountryCode).emergency[activeService]
     : reporterPhone ?? citizenContactNumber;
 
   useEffect(() => {
@@ -54,6 +60,8 @@ export function ChatScreen({ reportId, userRole, serviceType, currentUserName, s
       const report = cleanupExpiredReports().find(item => item.id === reportId);
       setReporterPhone(report?.reporterPhone ?? null);
       setReporterName(report?.reporterName || 'Mytha Floyen');
+      setReporterUid(report?.reporterUid);
+      setReportCountryCode(report?.countryCode ?? 'ID');
     };
     refresh();
     const stopFirebaseSync = startChatSync(reportId);
@@ -99,6 +107,9 @@ export function ChatScreen({ reportId, userRole, serviceType, currentUserName, s
           onClick={() => {
             toast.success(userRole === 'civilian' ? `Calling ${responderName}` : `Calling ${reporterName}`);
             onOpenCall({
+              mode: 'in-app',
+              reportId,
+              targetUid: userRole === 'service' ? reporterUid : undefined,
               contactName: userRole === 'civilian' ? responderName : reporterName,
               contactRole: userRole === 'civilian' ? responderName : 'Civilian',
               serviceType: activeService,
@@ -119,27 +130,13 @@ export function ChatScreen({ reportId, userRole, serviceType, currentUserName, s
           <span className="rounded-full bg-[#f3f4f5] px-3 py-[3px] text-[13px] font-medium leading-[19.5px] tracking-[0.5px] text-[#40493c]">Today</span>
         </div>
         {messages.length === 0 && (
-          <>
-            <div className="flex items-end gap-3">
-              <span className="mb-5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#0c3249] text-white"><User className="h-4 w-4" /></span>
-              <div className="max-w-[286px]">
-                <div className="rounded-[24px_24px_24px_2px] bg-[rgba(0,99,136,0.10)] px-4 py-3 text-[14px] leading-5 text-[#191c1d]">
-                  I've just submitted the fire report. Smoke is visible on the 2rd floor. People are evacuating now.
-                </div>
-                <p className="mt-1 pl-1 text-[10px] font-semibold uppercase leading-[15px] text-[#94a3b8]">Civilian - 18:30 WIB</p>
-              </div>
-            </div>
-            <div className="flex justify-end">
-              <div className="max-w-[286px]">
-                <div className="rounded-[24px_24px_2px_24px] px-4 py-3 text-right text-[14px] leading-5 text-white" style={{ backgroundColor: serviceColors[activeService] }}>
-                  Received, {reporterName}. {responderName} responders have been dispatched. ETA is <span className="font-extrabold text-[#c11720]">3 minutes.</span>
-                </div>
-                <p className="mt-1 flex justify-end gap-1 pr-1 text-[10px] font-semibold leading-[15px] text-[#94a3b8]">
-                  18:31 WIB <Check className="h-3 w-3" />
-                </p>
-              </div>
-            </div>
-          </>
+          <div className="mx-auto mt-16 flex max-w-[280px] flex-col items-center text-center text-[#64748b]">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#e8f1f6] text-[#0c3249]">
+              <MessageSquare className="h-5 w-5" />
+            </span>
+            <p className="mt-4 text-[15px] font-bold text-[#0c3249]">No messages yet</p>
+            <p className="mt-1 text-[13px] leading-5">Send the first update. The emergency service will receive it with this report.</p>
+          </div>
         )}
         {messages.map(message => {
           const isMine = message.sender === userRole && (

@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
-import { Ambulance, Flame, Shield, Clock, MapPin, AlertTriangle, Phone, Navigation, Filter, Radio, Edit, MessageSquare, ImageOff, ArrowLeft, User, CheckCircle2, Siren, Camera, Upload, ChevronDown, Home, XCircle } from 'lucide-react';
+import { Ambulance, Flame, Shield, Clock, MapPin, AlertTriangle, Phone, Navigation, Filter, Radio, Edit, MessageSquare, ImageOff, ArrowLeft, User, CheckCircle2, Siren, Camera, Upload, ChevronDown, Home, XCircle, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 import { EmergencyMap } from './EmergencyMap.tsx';
 import { IPhoneStatusBar } from './IPhoneStatusBar';
 import { toast } from 'sonner';
@@ -58,6 +58,8 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [unitCandidates, setUnitCandidates] = useState<UnitCandidate[]>([]);
   const [isCalculatingUnits, setIsCalculatingUnits] = useState(false);
+  const [overrideReason, setOverrideReason] = useState('');
+  const [revealedCitizenReportId, setRevealedCitizenReportId] = useState<string | null>(null);
   const [serviceLocation, setServiceLocation] = useState({
     address: currentLocation,
     coords: currentCoords
@@ -179,13 +181,16 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
 
   const createAuditEntry = (
     action: AuditEntry['action'],
-    label: string
+    label: string,
+    reason?: string
   ): AuditEntry => ({
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
     service: serviceType,
     action,
     label,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    operatorId: serviceDisplayName?.trim() || `${serviceType}-operator`,
+    reason
   });
 
   const persistStatusUpdate = (
@@ -200,39 +205,27 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
       .catch(() => replaceReports(updatedReports));
   };
 
-  const calculateNearestUnits = async (report: EmergencyReport) => {
+  const calculateProfileUnitAssignment = async (report: EmergencyReport) => {
     setIsCalculatingUnits(true);
     const destination = report.coords ?? country.center;
-    const offsets = [
-      { lat: 0, lng: 0 },
-      { lat: 0.018, lng: -0.012 },
-      { lat: -0.014, lng: 0.016 }
-    ];
-    const candidates = await Promise.all(offsets.map(async (offset, index) => {
-      const origin = {
-        lat: serviceLocation.coords.lat + offset.lat,
-        lng: serviceLocation.coords.lng + offset.lng
-      };
-      const route = await fetchDrivingRoute(origin, destination);
-      const unitNumber = serviceUnitConfig[serviceType].baseNumber + index;
-      return {
-        unit: `${unitPrefixes[serviceType]}-${String(unitNumber).padStart(2, '0')}`,
-        assignedAt: new Date().toISOString(),
-        etaMinutes: route ? Math.max(1, Math.ceil(route.durationSeconds / 60)) : 99,
-        distanceKm: route ? route.distanceMeters / 1000 : 99,
-        origin
-      };
-    }));
-    candidates.sort((a, b) => a.etaMinutes - b.etaMinutes);
-    setUnitCandidates(candidates.map((candidate, index) => ({ ...candidate, recommended: index === 0 })));
+    const route = await fetchDrivingRoute(serviceLocation.coords, destination);
+    setUnitCandidates([{
+      unit: unitIds[serviceType],
+      assignedAt: new Date().toISOString(),
+      etaMinutes: route ? Math.max(1, Math.ceil(route.durationSeconds / 60)) : 99,
+      distanceKm: route ? route.distanceMeters / 1000 : 99,
+      origin: serviceLocation.coords,
+      recommended: true
+    }]);
     setIsCalculatingUnits(false);
   };
 
   const openReport = (report: EmergencyReport) => {
     setSelectedReport(report);
+    setRevealedCitizenReportId(null);
     setDetailMode('detail');
     setUnitCandidates([]);
-    if (getServiceStatus(report, serviceType) === 'pending') void calculateNearestUnits(report);
+    if (getServiceStatus(report, serviceType) === 'pending') void calculateProfileUnitAssignment(report);
   };
 
   const openClosureReport = (report: EmergencyReport) => {
@@ -245,18 +238,29 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
   };
 
   const handleRespond = (reportId: string, assignment?: UnitAssignment) => {
-    const selectedAssignment = assignment ?? unitCandidates[0];
+    const report = reports.find(item => item.id === reportId);
+    if (report?.reviewStatus === 'needs-human-review') {
+      toast.error('Confirm the AI routing and record an override reason before dispatch');
+      return;
+    }
+    const selectedAssignment = assignment ?? unitCandidates[0] ?? {
+      unit: unitIds[serviceType],
+      assignedAt: new Date().toISOString(),
+      etaMinutes: 99,
+      distanceKm: 99,
+      origin: serviceLocation.coords
+    };
     const updatedReports = reports.map(r =>
       r.id === reportId
         ? updateUnitStatus(r, 'responding', selectedAssignment, createAuditEntry(
             'unit_dispatched',
-            `${selectedAssignment?.unit ?? unitIds[serviceType]} dispatched`
+            `${selectedAssignment.unit} accepted the incident`
           ))
         : r
     );
     persistStatusUpdate(updatedReports, reportId, 'responding', selectedAssignment);
     setSelectedReport(updatedReports.find(report => report.id === reportId) ?? null);
-    toast.success(`${selectedAssignment?.unit ?? unitIds[serviceType]} dispatched`);
+    toast.success(`${selectedAssignment.unit} accepted the incident`);
   };
 
   const handleResolve = (reportId: string) => {
@@ -300,6 +304,87 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
     );
     persistStatusUpdate(updatedReports, reportId, 'arrived');
     setSelectedReport(updatedReports.find(report => report.id === reportId) ?? null);
+  };
+
+  const persistLocalReviewUpdate = (updatedReports: EmergencyReport[], reportId: string) => {
+    setReports(updatedReports);
+    replaceReports(updatedReports);
+    setSelectedReport(updatedReports.find(report => report.id === reportId) ?? null);
+  };
+
+  const confirmAiRouting = (reportId: string) => {
+    const reason = overrideReason.trim();
+    if (!reason) {
+      toast.error('Add an operator review reason before confirming the route');
+      return;
+    }
+    const updatedReports = reports.map(r =>
+      r.id === reportId
+        ? {
+            ...r,
+            reviewStatus: 'operator-confirmed' as const,
+            reviewReason: `${serviceLabel} operator confirmed AI routing and dispatch recommendation.`,
+            auditTrail: [
+              ...(r.auditTrail ?? []),
+              createAuditEntry('human_override', `${serviceLabel} operator confirmed AI routing`, reason)
+            ]
+          }
+        : r
+    );
+    persistLocalReviewUpdate(updatedReports, reportId);
+    setOverrideReason('');
+    toast.success('AI routing confirmed');
+  };
+
+  const addServiceOverride = (reportId: string, nextService: ServiceType) => {
+    const reason = overrideReason.trim();
+    if (!reason) {
+      toast.error('Add an operator review reason before changing the response plan');
+      return;
+    }
+    const nextLabel = getServiceDisplayLabel(nextService);
+    const updatedReports = reports.map(r => {
+      if (r.id !== reportId) return r;
+      const services = [...new Set([...getReportServices(r), nextService])];
+      return {
+        ...r,
+        services,
+        responsePlan: [...new Set([...(r.responsePlan ?? []), nextService])],
+        serviceStatuses: {
+          ...createServiceStatuses(services, r.status),
+          ...r.serviceStatuses,
+          [nextService]: r.serviceStatuses?.[nextService] ?? 'pending'
+        },
+        reviewStatus: 'operator-confirmed' as const,
+        reviewReason: `${nextLabel} added by operator after manual review.`,
+        auditTrail: [
+          ...(r.auditTrail ?? []),
+          createAuditEntry('human_override', `${nextLabel} added after manual review`, reason)
+        ]
+      };
+    });
+    persistLocalReviewUpdate(updatedReports, reportId);
+    setOverrideReason('');
+    toast.success(`${nextLabel} added to response plan`);
+  };
+
+  const markEvidenceAnonymized = (reportId: string) => {
+    const updatedReports = reports.map(r =>
+      r.id === reportId
+        ? {
+            ...r,
+            anonymizationStatus: 'anonymized' as const,
+            auditTrail: [
+              ...(r.auditTrail ?? []),
+              createAuditEntry('human_override', 'Sensitive evidence marked anonymized before wider sharing')
+            ]
+          }
+        : r
+    );
+    setReports(updatedReports);
+    replaceReports(updatedReports);
+    setSelectedReport(updatedReports.find(report => report.id === reportId) ?? null);
+    toast.success('Evidence anonymization recorded');
   };
 
   const updateUnitStatus = (
@@ -596,8 +681,14 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
     : severityLabel === 'MEDIUM'
     ? 'border-yellow-300 bg-yellow-100 text-yellow-700'
     : 'border-blue-200 bg-blue-100 text-blue-700';
-  const reporterName = selectedReport?.reporterName?.trim() || 'Citizen Reporter';
-  const reporterPhone = selectedReport?.reporterPhone?.trim() || citizenContactNumber;
+  const citizenIdentityVisible = selectedReport?.id === revealedCitizenReportId;
+  const reporterName = citizenIdentityVisible
+    ? selectedReport?.reporterName?.trim() || 'Citizen Reporter'
+    : `Anonymous Citizen ${selectedReport ? `#${formatReportCode(selectedReport)}` : ''}`;
+  const rawReporterPhone = selectedReport?.reporterPhone?.trim() || citizenContactNumber;
+  const reporterPhone = citizenIdentityVisible
+    ? rawReporterPhone
+    : rawReporterPhone ? `•••• ${rawReporterPhone.slice(-4)}` : '';
 
   if (selectedReport && detailMode === 'closure') {
     return (
@@ -802,6 +893,14 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
                 </div>
               </div>
               <div className="flex gap-1.5">
+                <button
+                  onClick={() => setRevealedCitizenReportId(citizenIdentityVisible ? null : selectedReport.id)}
+                  className="flex h-11 w-11 items-center justify-center rounded-xl border border-[#0c3249]/15 bg-white text-[#0c3249]"
+                  aria-label={citizenIdentityVisible ? 'Hide citizen identity' : 'Reveal citizen identity'}
+                  title={citizenIdentityVisible ? 'Hide citizen identity' : 'Reveal citizen identity for operational need'}
+                >
+                  {citizenIdentityVisible ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
                 <button onClick={() => onOpenChat(selectedReport.id)} className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#0c3249] text-white" aria-label="Message reporter">
                   <MessageSquare className="h-5 w-5" />
                 </button>
@@ -833,6 +932,103 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
             </div>
           </section>
 
+          <section className="rounded-lg border border-[#0c3249]/10 bg-white p-4 shadow-[0_4px_12px_rgba(0,0,0,0.08)]">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5" style={{ color: theme.accent }} />
+                <h3 className="text-[12px] font-semibold uppercase leading-4 tracking-[0.6px]">AI Triage Control</h3>
+              </div>
+              <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                selectedReport.reviewStatus === 'needs-human-review'
+                  ? 'bg-amber-100 text-amber-800'
+                  : selectedReport.reviewStatus === 'operator-confirmed'
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'bg-emerald-100 text-emerald-700'
+              }`}>
+                {selectedReport.reviewStatus === 'needs-human-review'
+                  ? 'Review'
+                  : selectedReport.reviewStatus === 'operator-confirmed'
+                  ? 'Confirmed'
+                  : 'Auto'}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-[12px]">
+              <div className="rounded-lg bg-[#f4f8fb] p-3">
+                <p className="text-[#64748b]">Confidence</p>
+                <p className="mt-1 text-[18px] font-extrabold">{selectedReport.aiConfidence ?? 0}%</p>
+              </div>
+              <div className="rounded-lg bg-[#f4f8fb] p-3">
+                <p className="text-[#64748b]">Evidence</p>
+                <p className="mt-1 text-[18px] font-extrabold">{selectedReport.evidenceVerification?.score ?? 0}</p>
+              </div>
+              <div className="rounded-lg bg-[#f4f8fb] p-3">
+                <p className="text-[#64748b]">Route</p>
+                <p className="mt-1 text-[18px] font-extrabold">+{selectedReport.responseMetrics?.routedSeconds ?? 4}s</p>
+              </div>
+            </div>
+            {selectedReport.reviewReason && (
+              <p className="mt-3 text-[12px] leading-5 text-[#475569]">{selectedReport.reviewReason}</p>
+            )}
+            <div className="mt-3 space-y-2">
+              <textarea
+                value={overrideReason}
+                onChange={(event) => setOverrideReason(event.target.value)}
+                className="h-20 w-full resize-none rounded-lg border border-[#0c3249]/15 bg-white p-3 text-[12px] leading-4 outline-none"
+                placeholder="Required: explain the confirmation or routing change"
+              />
+              <button
+                onClick={() => confirmAiRouting(selectedReport.id)}
+                disabled={selectedReport.reviewStatus === 'operator-confirmed'}
+                className="flex h-10 w-full items-center justify-center rounded-lg bg-[#0c3249] text-[12px] font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                Confirm AI Routing
+              </button>
+              <div className="grid grid-cols-3 gap-2">
+                {(['ambulance', 'fire', 'police'] as const).map(service => {
+                  const active = getReportServices(selectedReport).includes(service);
+                  const Icon = serviceIcons[service];
+                  return (
+                    <button
+                      key={service}
+                      onClick={() => addServiceOverride(selectedReport.id, service)}
+                      disabled={active}
+                      className="flex h-10 items-center justify-center rounded-lg border border-[#0c3249]/10 bg-white text-[#0c3249] disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-300"
+                      title={active ? 'Already in response plan' : `Add ${getServiceDisplayLabel(service)}`}
+                      aria-label={active ? `${service} already active` : `Add ${service}`}
+                    >
+                      <Icon className="h-4 w-4" />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] font-bold text-[#475569]">
+              <span className="rounded-lg bg-[#f4f8fb] px-2.5 py-2">
+                Privacy: {selectedReport.anonymizationStatus === 'queued' ? 'Blur queue' : selectedReport.anonymizationStatus === 'anonymized' ? 'Blurred' : 'Clear'}
+              </span>
+              <span className="rounded-lg bg-[#f4f8fb] px-2.5 py-2">
+                Sync: {selectedReport.offlineSyncStatus === 'queued-for-sync'
+                  ? 'Offline queue'
+                  : selectedReport.offlineSyncStatus === 'syncing'
+                  ? 'Syncing'
+                  : selectedReport.offlineSyncStatus === 'sync-failed'
+                  ? 'Retry queued'
+                  : 'Verified online'}
+              </span>
+            </div>
+            <p className="mt-3 text-[11px] font-medium leading-4 text-[#64748b]">
+              Visual evidence is treated as sensitive data. Low-confidence or inconsistent visual signals require responder confirmation before final action.
+            </p>
+            {selectedReport.anonymizationStatus === 'queued' && (
+              <button
+                onClick={() => markEvidenceAnonymized(selectedReport.id)}
+                className="mt-3 flex h-10 w-full items-center justify-center rounded-lg bg-[#0c3249] text-[12px] font-bold text-white"
+              >
+                Mark Evidence Anonymized
+              </button>
+            )}
+          </section>
+
           <section className="space-y-2">
             <h3 className="text-[12px] font-semibold uppercase leading-4 tracking-[0.6px]">Incident Description</h3>
             <div className="rounded-lg border-l-[5px] border-[#c11720] bg-white p-4 shadow-[0_4px_12px_rgba(0,0,0,0.10)]">
@@ -842,10 +1038,29 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
             </div>
           </section>
 
+          {selectedReport.auditTrail?.length ? (
+            <section className="space-y-2">
+              <h3 className="text-[12px] font-semibold uppercase leading-4 tracking-[0.6px]">Accountability Log</h3>
+              <div className="space-y-2 rounded-lg bg-[#f8fafc] p-3">
+                {selectedReport.auditTrail.slice(-4).map(entry => (
+                  <div key={entry.id} className="rounded-lg bg-white px-3 py-2 text-[12px] leading-4">
+                    <p className="font-bold text-[#0c3249]">{entry.label}</p>
+                    {entry.reason && <p className="mt-1 text-[#475569]">Reason: {entry.reason}</p>}
+                    {entry.operatorId && <p className="mt-1 text-[#64748b]">Operator: {entry.operatorId}</p>}
+                    <p className="mt-1 text-[#64748b]">{formatReportDateTime(entry.timestamp)}</p>
+                  </div>
+                ))}
+                <p className="rounded-lg bg-[#eef8ff] px-3 py-2 text-[11px] font-semibold leading-4 text-[#475569]">
+                  Operator confirmations and overrides are stored as ground-truth review data for future AI improvement.
+                </p>
+              </div>
+            </section>
+          ) : null}
+
           <section className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-[12px] font-semibold uppercase leading-4 tracking-[0.6px]">Recommended Dispatch</h3>
-              <span className="text-[12px] font-semibold leading-4 tracking-[0.6px] text-[#c2c7cd]">{status === 'pending' ? '1 Unit Selected' : 'Unit Assigned'}</span>
+              <h3 className="text-[12px] font-semibold uppercase leading-4 tracking-[0.6px]">Your Assigned Unit</h3>
+              <span className="text-[12px] font-semibold leading-4 tracking-[0.6px] text-[#c2c7cd]">{status === 'pending' ? 'Responder Account' : 'Accepted'}</span>
             </div>
 
             <div className="space-y-2">
@@ -868,13 +1083,17 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
                         <span className="block text-[14px] leading-5">{unit.replace('-', ' ')} • {distance.toFixed(1)} km</span>
                       </span>
                     </span>
-                    <CheckCircle2 className="h-5 w-5 fill-white text-white" />
+                    {status === 'pending' ? (
+                      <span className="rounded-full bg-white/20 px-3 py-1 text-[11px] font-bold">Accept</span>
+                    ) : (
+                      <CheckCircle2 className="h-5 w-5 fill-white text-white" />
+                    )}
                   </button>
                 );
               })}
               {status === 'pending' && isCalculatingUnits && (
                 <div className="rounded-lg border border-[#0c3249]/10 bg-[#f9fafb] p-4 text-[13px] text-[#42474d]">
-                  Calculating nearest unit...
+                  Calculating your unit ETA...
                 </div>
               )}
             </div>
@@ -899,7 +1118,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#c11720] p-4 text-[16px] font-bold leading-6 text-white"
             >
               <Siren className="h-5 w-5" />
-              Dispatch Unit
+              Accept Incident
             </button>
           )}
           {status === 'responding' && (
@@ -1122,6 +1341,25 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
                       {report.description}
                     </p>
 
+                    <div className="mb-3 flex flex-wrap gap-2">
+                      <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                        report.reviewStatus === 'needs-human-review'
+                          ? 'bg-amber-100 text-amber-800'
+                          : report.reviewStatus === 'operator-confirmed'
+                          ? 'bg-blue-100 text-blue-700'
+                          : 'bg-emerald-100 text-emerald-700'
+                      }`}>
+                        {report.reviewStatus === 'needs-human-review'
+                          ? 'Human review'
+                          : report.reviewStatus === 'operator-confirmed'
+                          ? 'Confirmed'
+                          : 'AI auto-routed'}
+                      </span>
+                      <span className="rounded-full bg-[#f3f6f8] px-2.5 py-1 text-[11px] font-bold text-[#475569]">
+                        AI {report.aiConfidence ?? 0}%
+                      </span>
+                    </div>
+
                     <div className="mb-3 flex items-center gap-1.5 text-[12px] text-[#42474d]">
                       <MapPin className="w-3.5 h-3.5" />
                       <span className="truncate font-mono">{report.location}</span>
@@ -1146,7 +1384,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
                         className="flex items-center justify-center gap-2 rounded-2xl bg-[#c11720] py-3 text-[16px] font-bold leading-6 text-white shadow-lg transition hover:opacity-90"
                       >
                         <Siren className="h-5 w-5" />
-                        Dispatch Unit
+                        Accept Incident
                       </button>
                     )}
                     {getServiceStatus(report, serviceType) === 'responding' && (

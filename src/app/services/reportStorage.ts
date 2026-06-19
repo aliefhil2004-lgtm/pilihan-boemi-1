@@ -7,6 +7,7 @@ const CHAT_STORAGE_KEY = 'emergencyChats';
 const RESET_VERSION_KEY = 'emergencyHistoryResetVersion';
 const CURRENT_RESET_VERSION = '2026-06-02-v1';
 export const REPORT_RETENTION_MS = 60 * 60 * 1000;
+const MAX_SYNC_RETRIES = 5;
 
 function readReports(): StoredEmergencyReport[] {
   return JSON.parse(localStorage.getItem(REPORT_STORAGE_KEY) || '[]');
@@ -53,9 +54,61 @@ export function saveReport(report: StoredEmergencyReport) {
   };
   localStorage.setItem(REPORT_STORAGE_KEY, JSON.stringify([nextReport, ...reports]));
   window.dispatchEvent(new Event('emergency-reports-updated'));
-  void createIncident(nextReport)
-    .then(() => syncReportToFirebase(nextReport))
-    .catch(() => syncReportToFirebase(nextReport));
+
+  if (
+    nextReport.offlineSyncStatus === 'queued-for-sync' ||
+    (typeof navigator !== 'undefined' && !navigator.onLine)
+  ) {
+    return;
+  }
+
+  void syncOneReport(nextReport);
+}
+
+function updateReportSyncState(
+  reportId: string,
+  offlineSyncStatus: StoredEmergencyReport['offlineSyncStatus'],
+  syncAttempts?: number
+) {
+  const reports = readReports();
+  const updatedReports = reports.map(report =>
+    report.id === reportId ? { ...report, offlineSyncStatus, syncAttempts: syncAttempts ?? report.syncAttempts } : report
+  );
+  localStorage.setItem(REPORT_STORAGE_KEY, JSON.stringify(updatedReports));
+  window.dispatchEvent(new Event('emergency-reports-updated'));
+}
+
+async function syncOneReport(report: StoredEmergencyReport) {
+  const attempts = (report.syncAttempts ?? 0) + 1;
+  updateReportSyncState(report.id, 'syncing', attempts);
+  try {
+    try {
+      await createIncident({ ...report, syncAttempts: attempts, offlineSyncStatus: 'syncing' });
+    } catch (error) {
+      console.warn('Incident API unavailable; falling back to authenticated Firestore sync.', error);
+    }
+    await syncReportToFirebase({ ...report, syncAttempts: attempts, offlineSyncStatus: 'syncing' });
+    updateReportSyncState(report.id, 'online-synced', attempts);
+  } catch {
+    updateReportSyncState(report.id, 'sync-failed', attempts);
+    if (attempts < MAX_SYNC_RETRIES && typeof navigator !== 'undefined' && navigator.onLine) {
+      window.setTimeout(() => {
+        const latest = readReports().find(item => item.id === report.id);
+        if (latest && latest.offlineSyncStatus !== 'online-synced') void syncOneReport(latest);
+      }, Math.min(30_000, 1000 * 2 ** attempts));
+    }
+  }
+}
+
+export function syncQueuedReports() {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+
+  const queuedReports = cleanupExpiredReports().filter(report =>
+    report.offlineSyncStatus === 'queued-for-sync' || report.offlineSyncStatus === 'sync-failed'
+  );
+  queuedReports.forEach(report => {
+    void syncOneReport(report);
+  });
 }
 
 export function replaceReports(reports: StoredEmergencyReport[], syncCloud = true) {

@@ -1,7 +1,8 @@
 import { analyzeEmergencyImage } from '../roboflow';
 import { analyzeEmergencyWithYolo } from './yolo';
 import { analyzeEmergencyTextWithNlp } from './nlp';
-import { detectPrivacyRegionsFromPhoto } from './privacyDetector';
+import { anonymizePhotoPixels, detectPrivacyRegionsFromPhoto } from './privacyDetector';
+import { assessVisualReliability } from './visualReliability';
 import type { PrivacyRegion } from '../types/emergency';
 import type { ResponseRole, ServiceType } from '../types/emergency';
 export type { ServiceType } from '../types/emergency';
@@ -16,6 +17,7 @@ export interface AIResult {
   priorityRole: ResponseRole;
   indicators: string[];
   annotatedImage?: string;
+  anonymizedImage?: string;
   privacyRegions?: PrivacyRegion[];
   isFalseReport: boolean;
   falseReportReason?: string;
@@ -28,6 +30,7 @@ interface ImageAssessment {
   annotatedImage?: string;
   confidence?: number;
   privacyRegions?: PrivacyRegion[];
+  visualServices?: ServiceType[];
 }
 
 interface Classification {
@@ -331,6 +334,11 @@ function normalizeMedicalOnlyPlan<T extends ServiceType | ResponseRole>(items: T
   return items.includes('ambulance' as T) ? ['ambulance' as T] : [...new Set(items)];
 }
 
+const burnInjuryPattern = /(luka bakar|luka kebakar|kulit terbakar|tubuh terbakar|badan kebakar|tangan kebakar|melepuh|tersiram air panas|terkena air panas|burn wound|burn injury|burned skin|scald)/i;
+const activeFirePattern = /(kebakaran|kobaran api|api menyala|api besar|asap tebal|rumah terbakar|gedung terbakar|bangunan terbakar|kendaraan terbakar|fire|flame|active fire|heavy smoke|house on fire|building on fire|vehicle on fire)/i;
+const explicitMedicalPattern = /(injury|injured|hurt|bleeding|blood|wound|fracture|burn wound|burn injury|scald|pendarahan|berdarah|darah|luka|luka bakar|patah|korban cedera|unconscious|unresponsive|tidak sadar|sesak napas|not breathing|cardiac arrest|heart attack|stroke)/i;
+const explicitPolicePattern = /(crime|assault|attack|robbery|weapon|gun|knife|armed|shooting|stabbing|violence|pencurian|rampok|begal|kekerasan|penyerangan|senjata|pistol|pisau|penembakan|penusukan|disiram air keras|disiram bensin|sengaja dibakar|dibakar orang)/i;
+
 function getDisasterResponsePlan(type: string, score: number): ResponseRole[] {
   const lower = type.toLowerCase();
   if (/tsunami|earthquake|volcanic eruption|severe storm|flood|landslide/.test(lower)) {
@@ -344,8 +352,9 @@ function getCrisisResponsePlan(type: string, primary: ServiceType, score: number
   const plan: ResponseRole[] = [];
   const multiAgency = /(train accident|train crash|railway accident|kecelakaan kereta|plane crash|pesawat jatuh|mass casualty|banyak korban|building collapse|gedung runtuh|bus accident|truck accident|kecelakaan besar|accident besar)/i.test(lower);
   const hostileThreat = /(terror|teroris|terrorist|active shooter|hostage|armed threat|penembakan|sandera|bom|bomb|serangan bersenjata)/i.test(lower);
-  const entrapment = /(stuck|terjepit|terperangkap|trapped|korban terjepit|terjebak di kendaraan|pinned|frozen inside)/i.test(lower);
-  const medicalNeed = /(injury|injured|hurt|bleeding|pendarahan|luka|patah|unconscious|unresponsive|sesak napas|not breathing|cardiac arrest|heart attack|stroke)/i.test(lower);
+  const medicalNeed = explicitMedicalPattern.test(lower);
+  const activeFire = activeFirePattern.test(lower);
+  const policeEvidence = explicitPolicePattern.test(lower);
   const gasOrHazmat = /(gas leak|gas odor|kebocoran gas|gas bocor|bau gas|carbon monoxide|karbon monoksida|hazmat|bau kimia|asap kimia|chemical exposure|paparan kimia|poisoning|keracunan)/i.test(lower);
 
   if (/tsunami|earthquake|volcanic eruption|severe storm|flood|landslide/.test(lower)) {
@@ -354,15 +363,15 @@ function getCrisisResponsePlan(type: string, primary: ServiceType, score: number
 
   if (gasOrHazmat) {
     plan.push('fire');
-    plan.push('ambulance');
-    if (score >= 9 || /explosion|ledakan|bom|bomb/.test(lower)) plan.push('police');
+    if (medicalNeed) plan.push('ambulance');
+    if (policeEvidence) plan.push('police');
     return [...new Set(plan)];
   }
 
   if (hostileThreat) {
     plan.push('police');
-    if (score >= 6 || medicalNeed) plan.push('ambulance');
-    if (score >= 8) plan.push('fire');
+    if (medicalNeed) plan.push('ambulance');
+    if (activeFire) plan.push('fire');
     return [...new Set(plan)];
   }
 
@@ -375,21 +384,22 @@ function getCrisisResponsePlan(type: string, primary: ServiceType, score: number
 
   if (primary === 'fire') {
     plan.push('fire');
-    if (entrapment || medicalNeed || score >= 8) plan.push('ambulance');
-    if (/explosion|gas leak|ledakan|kebocoran gas/.test(lower)) plan.push('police');
+    if (medicalNeed) plan.push('ambulance');
+    if (policeEvidence) plan.push('police');
     return [...new Set(plan)];
   }
 
   if (primary === 'police') {
     plan.push('police');
-    if (medicalNeed || score >= 7) plan.push('ambulance');
+    if (medicalNeed) plan.push('ambulance');
+    if (activeFire) plan.push('fire');
     return [...new Set(plan)];
   }
 
   if (primary === 'ambulance') {
     plan.push('ambulance');
-    if (score >= 8 && /fire|smoke|kebakaran|asap/.test(lower)) plan.push('fire');
-    if (hostileThreat) plan.unshift('police');
+    if (activeFire) plan.push('fire');
+    if (policeEvidence) plan.unshift('police');
     return [...new Set(plan)];
   }
 
@@ -414,6 +424,9 @@ function extractImageAssessment(value: unknown): ImageAssessment | null {
         height?: unknown;
         confidence?: unknown;
       }>;
+      fire_predictions?: { predictions?: Array<{ confidence?: unknown }> };
+      injured_person_predictions?: { predictions?: Array<{ confidence?: unknown }> };
+      gun_and_knife_predictions?: { predictions?: Array<{ confidence?: unknown }> };
     }>;
   }).outputs?.[0];
 
@@ -421,12 +434,19 @@ function extractImageAssessment(value: unknown): ImageAssessment | null {
   const incidentType = output.incident_type.toLowerCase();
   const description = typeof output.description === 'string' ? output.description : undefined;
   const detectedPrivacyRegions = extractPrivacyRegions(output);
+  const hasConfidentPrediction = (value: { predictions?: Array<{ confidence?: unknown }> } | undefined) =>
+    value?.predictions?.some(prediction => Number(prediction.confidence ?? 0) >= 0.35) ?? false;
+  const visualServices: ServiceType[] = [];
+  if (hasConfidentPrediction(output.fire_predictions)) visualServices.push('fire');
+  if (hasConfidentPrediction(output.injured_person_predictions)) visualServices.push('ambulance');
+  if (hasConfidentPrediction(output.gun_and_knife_predictions)) visualServices.push('police');
 
   return {
     incidentType,
     severityScore: typeof output.severity_score === 'number' ? output.severity_score : 0,
     description,
     confidence: typeof output.confidence === 'number' ? output.confidence : undefined,
+    visualServices,
     annotatedImage:
       typeof output.annotated_image?.value === 'string'
         ? `data:image/jpeg;base64,${output.annotated_image.value}`
@@ -691,7 +711,7 @@ function detectRequiredServices(
   const services = new Set<ServiceType>([primary]);
   const largeAnimalIncident = largeDangerousAnimalPattern;
   const smallAnimalIncident = smallDangerousAnimalPattern;
-  const medicalEmergencySignal = /(not breathing|cardiac arrest|heart attack|stroke|unconscious|unresponsive|heavy bleeding|difficulty breathing|tidak bernapas|henti jantung|serangan jantung|tidak sadar|sesak napas|pendarahan hebat)/i;
+  const medicalEmergencySignal = explicitMedicalPattern;
   const gasOrHazmatSignal = /(gas leak|gas odor|kebocoran gas|gas bocor|bau gas|carbon monoxide|karbon monoksida|hazmat|bau kimia|asap kimia|chemical exposure|paparan kimia|poisoning|keracunan)/i;
   const multiAgencyIncident =
     /(train accident|train crash|railway accident|kecelakaan kereta|kereta anjlok|plane crash|pesawat jatuh|mass casualty|banyak korban|building collapse|gedung runtuh|tsunami|volcanic eruption|volcano eruption|gunung meletus|erupsi gunung|earthquake|gempa|typhoon|hurricane|cyclone|tornado|topan|puting beliung|landslide|longsor|flash flood|flood|banjir)/i;
@@ -704,7 +724,7 @@ function detectRequiredServices(
 
   if (gasOrHazmatSignal.test(lower)) {
     services.add('fire');
-    services.add('ambulance');
+    if (medicalEmergencySignal.test(lower)) services.add('ambulance');
   }
 
   if (primary === 'fire' && severityScore >= 8 && medicalEmergencySignal.test(lower)) {
@@ -722,9 +742,9 @@ function detectRequiredServices(
     services.add('fire');
   }
 
-  rules.forEach(rule => {
-    if (includesAny(lower, rule.keywords)) services.add(rule.service);
-  });
+  if (activeFirePattern.test(lower)) services.add('fire');
+  if (explicitMedicalPattern.test(lower)) services.add('ambulance');
+  if (explicitPolicePattern.test(lower)) services.add('police');
 
   return [...services];
 }
@@ -877,14 +897,30 @@ export async function analyzeEmergency(
   const nlpClassification = await analyzeEmergencyTextWithNlp(text);
   let imageClassification: Classification | null = null;
   let annotatedImage: string | undefined;
+  let anonymizedImage: string | undefined;
   let privacyRegions: PrivacyRegion[] | undefined;
   let imageAnalysisFailed = false;
+  let visualReliabilityIndicators: string[] = [];
+  let reflectionRisk = 0;
+  let fireVisualSupport = 0;
+  const visualServiceEvidence = new Set<ServiceType>();
 
   if (photo) {
     const localPrivacyRegions = await detectPrivacyRegionsFromPhoto(photo);
     privacyRegions = mergePrivacyRegions(privacyRegions, localPrivacyRegions);
+    const identityRegions = localPrivacyRegions.filter(region =>
+      /face|license plate|number plate/i.test(region.label)
+    );
+    anonymizedImage = await anonymizePhotoPixels(photo, identityRegions);
+    const visualReliability = await assessVisualReliability(photo);
+    visualReliabilityIndicators = visualReliability.indicators;
+    reflectionRisk = visualReliability.reflectionRisk;
+    fireVisualSupport = visualReliability.fireVisualSupport;
+    const offlineMode = typeof navigator !== 'undefined' && !navigator.onLine;
 
-    const yoloDetections = await analyzeEmergencyWithYolo(photo);
+    // Only the irreversibly anonymized pixels leave the device for remote inference.
+    const remotePhoto = anonymizedImage;
+    const yoloDetections = offlineMode ? [] : await analyzeEmergencyWithYolo(remotePhoto);
     if (yoloDetections.length) {
       const yoloText = yoloDetections
         .filter(detection => detection.confidence >= 0.4)
@@ -902,11 +938,16 @@ export async function analyzeEmergency(
     }
 
     try {
-      const imageResult: unknown = await analyzeEmergencyImage(photo, text);
+      if (offlineMode) {
+        imageAnalysisFailed = true;
+        throw new Error('Offline mode: remote image assessment skipped');
+      }
+      const imageResult: unknown = await analyzeEmergencyImage(remotePhoto, text);
       console.log('ROBOFLOW RESULT:', imageResult);
       const assessment = extractImageAssessment(imageResult);
       console.log('IMAGE ASSESSMENT:', assessment);
       if (assessment) {
+        assessment.visualServices?.forEach(service => visualServiceEvidence.add(service));
         annotatedImage = assessment.annotatedImage;
         privacyRegions = mergePrivacyRegions(privacyRegions, assessment.privacyRegions);
         const roboflowClassification = classifyImage(assessment);
@@ -918,8 +959,46 @@ export async function analyzeEmergency(
         }
       }
     } catch (error) {
-      console.error('ROBOFLOW ERROR:', error);
+      if (!offlineMode) console.error('ROBOFLOW ERROR:', error);
       imageAnalysisFailed = true;
+    }
+
+    if (imageClassification) {
+      const fireSignal = imageClassification.service === 'fire' && /fire/i.test(imageClassification.type);
+      const textCorroboratesFire = /(fire|flame|smoke|burning|kebakaran|asap|terbakar|api)/i.test(text);
+      if (fireSignal && reflectionRisk >= 0.68 && fireVisualSupport < 0.58 && !textCorroboratesFire) {
+        imageClassification = {
+          ...imageClassification,
+          score: Math.min(3, imageClassification.score),
+          indicators: [
+            ...imageClassification.indicators,
+            'Possible wet-road reflection suppressed because text did not corroborate an active fire'
+          ]
+        };
+      } else if (visualReliabilityIndicators.length) {
+        imageClassification = {
+          ...imageClassification,
+          indicators: [...imageClassification.indicators, ...visualReliabilityIndicators]
+        };
+      }
+    }
+
+    const isUnexplainedBurnInjury =
+      burnInjuryPattern.test(text) &&
+      !activeFirePattern.test(text) &&
+      !explicitPolicePattern.test(text) &&
+      !visualServiceEvidence.has('fire') &&
+      !visualServiceEvidence.has('police');
+    if (imageClassification && isUnexplainedBurnInjury && imageClassification.service !== 'ambulance') {
+      imageClassification = {
+        type: 'Medical Emergency',
+        service: 'ambulance',
+        score: Math.max(6, Math.min(8, imageClassification.score)),
+        indicators: [
+          ...imageClassification.indicators,
+          'Burn injury routed medically; no evidence of active fire or intentional violence was provided'
+        ]
+      };
     }
   }
 
@@ -952,21 +1031,45 @@ export async function analyzeEmergency(
   ];
 
   const fused = fuseSignals(signals, text, imageAnalysisFailed, Boolean(photo));
-  const fusedServices = [...new Set([
+  const candidateServices = [...new Set([
     ...fused.services,
-    ...(nlpClassification?.services ?? [])
+    ...(nlpClassification?.services ?? []),
+    ...visualServiceEvidence
   ])];
+  const strongVisionServices = new Set<ServiceType>([
+    ...visualServiceEvidence,
+    ...signals
+      .filter(signal => signal.source === 'vision' && signal.score >= 4)
+      .map(signal => signal.service)
+  ]);
+  const protocolMultiAgency = /(tsunami|earthquake|gempa|volcanic eruption|erupsi gunung|mass casualty|banyak korban|train accident|kecelakaan kereta|plane crash|pesawat jatuh|building collapse|gedung runtuh)/i.test(`${fused.type} ${text}`);
+  const hasServiceEvidence = (service: ServiceType) => {
+    if (service === fused.service || protocolMultiAgency) return true;
+    if (service === 'ambulance') return explicitMedicalPattern.test(text) || strongVisionServices.has('ambulance');
+    if (service === 'fire') return activeFirePattern.test(text) || strongVisionServices.has('fire');
+    return explicitPolicePattern.test(text) || strongVisionServices.has('police');
+  };
+  const fusedServices = candidateServices.filter(hasServiceEvidence);
+  const fusedResponsePlan = [...new Set([
+    ...fused.responsePlan,
+    ...fusedServices
+  ])].filter(role =>
+    role === 'disaster-response' ||
+    !['ambulance', 'fire', 'police'].includes(role) ||
+    fusedServices.includes(role as ServiceType)
+  );
 
   return {
     type: fused.type,
     service: fused.service,
     services: fusedServices,
-    responsePlan: fused.responsePlan,
-    priorityRole: fused.priorityRole,
+    responsePlan: fusedResponsePlan,
+    priorityRole: fusedResponsePlan[0] ?? fused.priorityRole,
     severityScore: fused.score,
     severity: severityFromScore(fused.score),
-    indicators: fused.indicators,
-    annotatedImage,
+    indicators: [...new Set([...fused.indicators, ...visualReliabilityIndicators])],
+    annotatedImage: annotatedImage ?? anonymizedImage,
+    anonymizedImage,
     privacyRegions,
     isFalseReport: fused.isFalseReport,
     falseReportReason: fused.falseReportReason

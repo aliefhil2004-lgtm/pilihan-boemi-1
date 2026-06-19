@@ -1,9 +1,8 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Prototype rules only. Require authentication before production.
     match /reports/{reportId}/{fileName} {
-      allow read, write: if true;
+      allow read, write: if request.auth != null;
     }
   }
 }

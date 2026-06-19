@@ -208,26 +208,14 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onOpenCall, o
 
         <footer className="absolute bottom-20 left-0 right-0 z-30 grid grid-cols-[50px_50px_1fr] gap-2 bg-white px-5 pb-3 pt-2">
           <button
-            onClick={() => {
-              if (!accepted) {
-                showWaitingToast('Chat');
-                return;
-              }
-              onOpenChat(selectedReport.id);
-            }}
+            onClick={() => onOpenChat(selectedReport.id)}
             className="flex h-[50px] items-center justify-center rounded-lg bg-[#0b3850] text-white transition hover:bg-[#123f59]"
             aria-label="Open chat"
           >
             <MessageSquare className="h-[18px] w-[18px]" />
           </button>
           <button
-            onClick={() => {
-              if (!accepted) {
-                showWaitingToast('Phone call');
-                return;
-              }
-              onOpenCall(selectedReport);
-            }}
+            onClick={() => onOpenCall(selectedReport)}
             className="flex h-[50px] items-center justify-center rounded-lg bg-[#0b3850] text-white transition hover:bg-[#123f59]"
             aria-label="Call responder"
           >
@@ -415,26 +403,14 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onOpenCall, o
 
               <div className="mt-0 grid grid-cols-[50px_50px_1fr] gap-2 pb-1">
                 <button
-                  onClick={() => {
-                    if (!isReportAccepted(selectedReport)) {
-                      showWaitingToast('Chat');
-                      return;
-                    }
-                    onOpenChat(selectedReport.id);
-                  }}
+                  onClick={() => onOpenChat(selectedReport.id)}
                   className="flex h-[50px] items-center justify-center rounded-lg bg-[#0b3850] text-white hover:bg-[#123f59]"
                   aria-label="Open chat"
                 >
                   <MessageSquare className="h-[18px] w-[18px]" />
                 </button>
                 <button
-                  onClick={() => {
-                    if (!isReportAccepted(selectedReport)) {
-                      showWaitingToast('Phone call');
-                      return;
-                    }
-                    onOpenCall(selectedReport);
-                  }}
+                  onClick={() => onOpenCall(selectedReport)}
                   className="flex h-[50px] items-center justify-center rounded-lg bg-[#0b3850] text-white hover:bg-[#123f59]"
                   aria-label="Call reporter"
                 >

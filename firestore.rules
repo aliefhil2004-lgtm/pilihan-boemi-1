@@ -1,15 +1,38 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Prototype rules only. Replace with authenticated role-based rules before production.
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isServiceUser() {
+      return signedIn() && (
+        request.auth.token.role in ['service', 'ambulance', 'fire', 'police'] ||
+        (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['service', 'ambulance', 'fire', 'police']
+        )
+      );
+    }
+
+    function validInlinePhoto(data) {
+      return !('photo' in data) || data.photo == null ||
+        (data.photo is string && data.photo.size() <= 220000);
+    }
+
     match /reports/{reportId} {
-      allow read, create, update, delete: if true;
+      allow create: if signedIn() && request.resource.data.reporterUid == request.auth.uid && validInlinePhoto(request.resource.data);
+      allow read: if signedIn() && (resource.data.reporterUid == request.auth.uid || isServiceUser());
+      allow update: if signedIn() && validInlinePhoto(request.resource.data) &&
+        (resource.data.reporterUid == request.auth.uid || isServiceUser());
+      allow delete: if signedIn() && (resource.data.reporterUid == request.auth.uid || isServiceUser());
     }
     match /messages/{messageId} {
-      allow read, create: if true;
+      allow read, create: if signedIn();
     }
     match /liveGps/{serviceId} {
-      allow read, write: if true;
+      allow read: if signedIn();
+      allow write: if isServiceUser();
     }
     match /users/{userId} {
       allow read, create, update: if request.auth != null && request.auth.uid == userId;

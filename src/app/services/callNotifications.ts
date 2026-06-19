@@ -3,6 +3,11 @@ import type { ServiceType } from '../types/emergency';
 export type CallRole = 'civilian' | 'service';
 
 export interface AppCallData {
+  mode?: 'hotline' | 'in-app';
+  callId?: string;
+  reportId?: string;
+  targetUid?: string;
+  incoming?: boolean;
   contactName: string;
   contactRole: string;
   serviceType?: ServiceType;

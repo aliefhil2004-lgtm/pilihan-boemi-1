@@ -13,9 +13,19 @@ export interface UnitAssignment {
 export interface AuditEntry {
   id: string;
   service: ServiceType;
-  action: 'report_created' | 'unit_dispatched' | 'unit_arrived' | 'report_resolved' | 'report_declined';
+  action:
+    | 'report_created'
+    | 'ai_triage_completed'
+    | 'manual_review_required'
+    | 'human_override'
+    | 'unit_dispatched'
+    | 'unit_arrived'
+    | 'report_resolved'
+    | 'report_declined';
   label: string;
   timestamp: string;
+  operatorId?: string;
+  reason?: string;
 }
 
 export interface PrivacyRegion {
@@ -26,6 +36,18 @@ export interface PrivacyRegion {
   height: number;
   confidence?: number;
   normalized?: boolean;
+}
+
+export interface EvidenceMetadata {
+  source: 'camera' | 'upload' | 'unknown';
+  capturedAt?: string;
+  fileLastModifiedAt?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  width?: number;
+  height?: number;
+  gpsAccuracyMeters?: number;
+  fingerprint?: string;
 }
 
 export interface StoredEmergencyReport {
@@ -55,6 +77,33 @@ export interface StoredEmergencyReport {
   declinedAt?: string;
   detectedIndicators?: string[];
   privacyRegions?: PrivacyRegion[];
+  aiConfidence?: number;
+  reviewStatus?: 'auto-routed' | 'needs-human-review' | 'operator-confirmed';
+  reviewReason?: string;
+  responseMetrics?: {
+    submittedSeconds: number;
+    aiTriageSeconds: number;
+    routedSeconds: number;
+    dispatchTargetSeconds: number;
+    estimatedTriageSecondsSaved: number;
+    jakartaBaselineSeconds: number;
+    simulatedTotalSeconds: number;
+    measuredAt: string;
+    stepSavings?: Array<{
+      step: string;
+      manualSeconds: number;
+      automatedSeconds: number;
+      savedSeconds: number;
+    }>;
+  };
+  evidenceVerification?: {
+    score: number;
+    checks: Array<{ label: string; passed: boolean; points: number }>;
+  };
+  evidenceMetadata?: EvidenceMetadata;
+  anonymizationStatus?: 'not-needed' | 'queued' | 'anonymized';
+  offlineSyncStatus?: 'online-synced' | 'queued-for-sync' | 'syncing' | 'sync-failed';
+  syncAttempts?: number;
   countryCode?: string;
   serviceClosureReports?: Partial<Record<ServiceType, {
     outcome: string;

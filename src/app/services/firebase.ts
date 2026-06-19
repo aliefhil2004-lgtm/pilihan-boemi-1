@@ -1,7 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
-import { getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -16,7 +15,6 @@ export const firebaseEnabled = Boolean(
   firebaseConfig.apiKey &&
   firebaseConfig.authDomain &&
   firebaseConfig.projectId &&
-  firebaseConfig.storageBucket &&
   firebaseConfig.appId
 );
 
@@ -33,5 +31,4 @@ if (!firebaseEnabled && !isLocalPreview) {
 }
 
 export const firestore = firebaseApp ? getFirestore(firebaseApp) : null;
-export const firebaseStorage = firebaseApp ? getStorage(firebaseApp) : null;
 export const firebaseAuth = firebaseApp ? getAuth(firebaseApp) : null;

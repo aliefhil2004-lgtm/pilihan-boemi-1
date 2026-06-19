@@ -238,7 +238,7 @@ function nlpApiPlaceholder(apiKey) {
   }
 }
 
-function roboflowWorkflowApi(apiKey) {
+function roboflowWorkflowApi(apiKey, workflowUrl) {
   return {
     name: 'roboflow-workflow-api',
     configureServer(server) {
@@ -255,7 +255,7 @@ function roboflowWorkflowApi(apiKey) {
         req.on('end', async () => {
           res.setHeader('Content-Type', 'application/json')
 
-          if (!apiKey) {
+          if (!apiKey || !workflowUrl) {
             let payloadText = ''
             try {
               const payload = JSON.parse(body)
@@ -277,7 +277,7 @@ function roboflowWorkflowApi(apiKey) {
               outputs: [{
                 incident_type: disasterType,
                 severity_score: 5,
-                description: 'Roboflow is not configured in local preview; returning a neutral fallback response.',
+                description: 'Roboflow API key or workflow URL is not configured in local preview; returning a neutral fallback response.',
                 confidence: 0.25,
                 predictions: []
               }]
@@ -287,14 +287,11 @@ function roboflowWorkflowApi(apiKey) {
 
           try {
             const payload = JSON.parse(body)
-            const response = await fetch(
-              'https://serverless.roboflow.com/aliefs-workspace-bemvh/workflows/emergency-severity-analyzer-1778770846609',
-              {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...payload, api_key: apiKey }),
-              },
-            )
+            const response = await fetch(workflowUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ...payload, api_key: apiKey }),
+            })
             res.statusCode = response.status
             res.end(await response.text())
           } catch {
@@ -400,7 +397,7 @@ export default defineConfig(({ mode }) => {
       routeApi(),
       yoloApiPlaceholder(),
       nlpApiPlaceholder(env.HUGGINGFACE_API_KEY),
-      roboflowWorkflowApi(env.ROBOFLOW_API_KEY),
+      roboflowWorkflowApi(env.ROBOFLOW_API_KEY, env.ROBOFLOW_WORKFLOW_URL),
       roboflowWebrtcApi(env.ROBOFLOW_API_KEY),
       figmaAssetResolver(),
       // React and Tailwind power the mobile prototype UI.

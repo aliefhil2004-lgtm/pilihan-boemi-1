@@ -216,3 +216,63 @@ export async function detectPrivacyRegionsFromPhoto(photo: string): Promise<Priv
     return [];
   }
 }
+
+function getPixelRegion(region: PrivacyRegion, width: number, height: number) {
+  const normalized = region.normalized || (
+    region.left <= 100 && region.top <= 100 && region.width <= 100 && region.height <= 100
+  );
+  const left = normalized ? region.left / 100 * width : region.left;
+  const top = normalized ? region.top / 100 * height : region.top;
+  const regionWidth = normalized ? region.width / 100 * width : region.width;
+  const regionHeight = normalized ? region.height / 100 * height : region.height;
+
+  return {
+    left: Math.max(0, Math.floor(left)),
+    top: Math.max(0, Math.floor(top)),
+    width: Math.max(1, Math.min(width - left, Math.ceil(regionWidth))),
+    height: Math.max(1, Math.min(height - top, Math.ceil(regionHeight)))
+  };
+}
+
+export async function anonymizePhotoPixels(
+  photo: string,
+  regions: PrivacyRegion[]
+): Promise<string> {
+  if (!regions.length || typeof document === 'undefined') return photo;
+
+  const image = await loadImage(photo);
+  const canvas = document.createElement('canvas');
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  const context = canvas.getContext('2d');
+  if (!context) return photo;
+  context.drawImage(image, 0, 0);
+
+  for (const region of regions) {
+    const box = getPixelRegion(region, canvas.width, canvas.height);
+    const sampleWidth = Math.max(1, Math.min(12, Math.round(box.width / 10)));
+    const sampleHeight = Math.max(1, Math.min(12, Math.round(box.height / 10)));
+    const sample = document.createElement('canvas');
+    sample.width = sampleWidth;
+    sample.height = sampleHeight;
+    const sampleContext = sample.getContext('2d');
+    if (!sampleContext) continue;
+    sampleContext.drawImage(
+      canvas,
+      box.left,
+      box.top,
+      box.width,
+      box.height,
+      0,
+      0,
+      sampleWidth,
+      sampleHeight
+    );
+    context.save();
+    context.imageSmoothingEnabled = false;
+    context.drawImage(sample, 0, 0, sampleWidth, sampleHeight, box.left, box.top, box.width, box.height);
+    context.restore();
+  }
+
+  return canvas.toDataURL('image/jpeg', 0.82);
+}
