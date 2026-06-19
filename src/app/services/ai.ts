@@ -869,8 +869,13 @@ function fuseSignals(signals: Signal[], text: string, imageAnalysisFailed: boole
     ...(imageAnalysisFailed ? ['Photo uploaded, but image assessment was unavailable'] : [])
   ];
 
-  const services = detectRequiredServices(text, winningService, finalScore);
-  for (const service of serviceLabels) services.push(service);
+  const services = [...new Set([
+    winningService,
+    ...detectRequiredServices(text, winningService, finalScore),
+    ...usableSignals
+      .filter(signal => signal.service !== winningService && signal.score >= 6)
+      .map(signal => signal.service)
+  ])];
   const incidentType = strongestSignal?.type ?? 'General Emergency';
   const responsePlan = /tsunami|volcanic eruption|earthquake|severe storm|landslide|flood/i.test(incidentType)
     ? getDisasterResponsePlan(strongestSignal?.type ?? 'General Emergency', finalScore)
@@ -1049,14 +1054,18 @@ export async function analyzeEmergency(
     if (service === 'fire') return activeFirePattern.test(text) || strongVisionServices.has('fire');
     return explicitPolicePattern.test(text) || strongVisionServices.has('police');
   };
-  const fusedServices = candidateServices.filter(hasServiceEvidence);
-  const fusedResponsePlan = [...new Set([
-    ...fused.responsePlan,
-    ...fusedServices
-  ])].filter(role =>
-    role === 'disaster-response' ||
-    !['ambulance', 'fire', 'police'].includes(role) ||
-    fusedServices.includes(role as ServiceType)
+  const fusedServices = normalizeMedicalOnlyPlan(candidateServices.filter(hasServiceEvidence), fused.type, text);
+  const fusedResponsePlan = normalizeMedicalOnlyPlan(
+    [...new Set([
+      ...fused.responsePlan,
+      ...fusedServices
+    ])].filter(role =>
+      role === 'disaster-response' ||
+      !['ambulance', 'fire', 'police'].includes(role) ||
+      fusedServices.includes(role as ServiceType)
+    ),
+    fused.type,
+    text
   );
 
   return {
