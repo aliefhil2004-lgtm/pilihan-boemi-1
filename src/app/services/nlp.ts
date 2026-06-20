@@ -16,9 +16,18 @@ export interface NlpEmergencyResult {
 const burnInjuryPattern = /(luka bakar|luka kebakar|kulit terbakar|tubuh terbakar|badan kebakar|tangan kebakar|melepuh|tersiram air panas|terkena air panas|burn wound|burn injury|burned skin|thermal burn|scald)/i;
 const explosionPattern = /(\bexplod(?:e|es|ed|ing)?\b|\bexplosion\b|\bblast(?:ed|ing)?\b|\bdetonat(?:e|es|ed|ing|ion)\b|\bblew up\b|\bblown up\b|\bledakan\b|\bmeledak+k?\b|\bmeleduk\b|\bdentuman keras\b|\bletupan\b|\bmeletup\b|\bsumabog\b|\bpagsabog\b|\bvụ nổ\b|\bphát nổ\b|\bvu no\b|\bphat no\b|bom (meledak|explode)|tabung gas (meledak|explode)|boiler (meledak|explode)|gas cylinder exploded)/i;
 const activeFirePattern = new RegExp(`(\\bkebakaran\\b|\\bfire\\b|\\bflames?\\b|\\bsmoke\\b|\\basap\\b|kobaran api|api (menyala|besar|menjalar|menyebar)|asap (tebal|hitam)|rumah terbakar|gedung terbakar|bangunan terbakar|kendaraan terbakar|\\bactive fire\\b|\\bopen flames?\\b|\\bheavy smoke\\b|house on fire|building on fire|vehicle on fire|burning (house|building|vehicle|car|forest|room)|${explosionPattern.source})`, 'i');
+const nonActiveFireObjectPattern = /\b(fire extinguisher|fire alarm|smoke alarm|smoke detector|fire detector|fire door|fire exit|fire station|fire truck|fire engine|fire hydrant|firefighter|fire fighter|alat pemadam api|pemadam api|tabung apar|apar)\b/i;
 const intentionalViolencePattern = /(disiram air keras|disiram bensin|sengaja dibakar|dibakar orang|assault|attack|weapon|penyerangan|senjata)/i;
 const medicalConditionPattern = /(injury|injured|hurt|bleeding|blood|wound|cut|laceration|abrasion|skin irritation|burning sensation|rash|redness|fracture|burn wound|burn injury|scald|pendarahan|berdarah|darah|luka|luka bakar|luka sobek|luka robek|lecet|gores|iritasi|ruam|kemerahan|melepuh|patah|cedera|trauma|unconscious|unresponsive|pingsan|tidak sadar)/i;
 const minorMedicalPattern = /(iritasi|skin irritation|burning sensation|ruam|rash|kemerahan|redness|lecet|scrape|abrasi|abrasion|gores|goresan|superficial cut|small cut|shallow cut|minor injury|minor wound|small wound|luka kecil|luka ringan|cedera ringan|memar ringan|keseleo ringan|first[ -]degree burn|luka bakar ringan)/i;
+
+function hasActiveFireEvidence(value: string) {
+  const cleaned = value
+    .replace(new RegExp(nonActiveFireObjectPattern.source, 'gi'), ' ')
+    .replace(/\b(no|without)\s+(visible\s+)?(fire|flames?|smoke)(\s+(or|and)\s+(fire|flames?|smoke))?/gi, ' ')
+    .replace(/\b(tidak ada|tanpa)\s+(api|asap|kebakaran)(\s+(atau|dan)\s+(api|asap|kebakaran))?/gi, ' ');
+  return activeFirePattern.test(cleaned);
+}
 
 function normalizeText(value: string) {
   return value
@@ -228,7 +237,7 @@ function classifyMedicalCondition(text: string): NlpEmergencyResult | null {
   if (/(not breathing|tidak bernapas|napas berhenti|cardiac arrest|henti jantung|unresponsive|tidak responsif|pendarahan tidak berhenti|uncontrolled bleeding|amputation|amputasi|organ terlihat|exposed organ)/i.test(text)) {
     score = 9.8;
     severity = 'critical medical signs';
-  } else if (/(unconscious|tidak sadar|pingsan|pendarahan hebat|heavy bleeding|severe bleeding|luka sangat dalam|deep wound|gaping wound|third[ -]degree burn|luka bakar derajat tiga|luka bakar luas|extensive burn|burn.*(face|airway)|luka bakar.*(wajah|saluran napas)|patah tulang terbuka|open fracture)/i.test(text)) {
+  } else if (/(unconscious|tidak sadar|pingsan|pendarahan hebat|heavy bleeding|bleeding heavily|severe bleeding|profuse bleeding|darah mengalir banyak|banyak darah|pool of blood|large blood pool|severe cut|open wound|luka terbuka|luka sangat dalam|deep wound|gaping wound|third[ -]degree burn|luka bakar derajat tiga|luka bakar luas|extensive burn|burn.*(face|airway)|luka bakar.*(wajah|saluran napas)|patah tulang terbuka|open fracture)/i.test(text)) {
     score = 9.1;
     severity = 'severe medical signs';
   } else if (minorMedicalPattern.test(text)) {
@@ -256,7 +265,7 @@ function analyzeTextWithLocalSafetyRules(text: string): NlpEmergencyResult | nul
   const invisibleRule = invisibleEmergencyRules.find(item => item.pattern.test(prepared));
   if (invisibleRule) return invisibleRule.result;
   const medicalResult = classifyMedicalCondition(prepared);
-  if (medicalResult && activeFirePattern.test(prepared)) {
+  if (medicalResult && hasActiveFireEvidence(prepared)) {
     const explosion = explosionPattern.test(prepared);
     return {
       type: explosion ? 'Explosion Emergency with Medical Casualty' : 'Fire Emergency with Medical Casualty',
@@ -267,11 +276,14 @@ function analyzeTextWithLocalSafetyRules(text: string): NlpEmergencyResult | nul
     };
   }
   if (medicalResult) return medicalResult;
-  const rule = localNlpRules.find(item => item.pattern.test(prepared));
+  const rule = localNlpRules.find(item => {
+    if (item.result.type === 'Fire Emergency' && !hasActiveFireEvidence(prepared)) return false;
+    return item.pattern.test(prepared);
+  });
   if (rule) return rule.result;
   if (!englishSignalBoost(prepared)) return null;
   if (explosionPattern.test(prepared)) return { type: 'Explosion Emergency', service: 'fire', services: ['fire'], score: 9.2, indicators: ['Local NLP rule: explosion or detonation reported'] };
-  if (activeFirePattern.test(prepared) || /(\bblaze\b|\bsmoke\b)/i.test(prepared)) return { type: 'Fire Emergency', service: 'fire', services: ['fire'], score: 8.3, indicators: ['Local NLP rule: active fire or smoke reported'] };
+  if (hasActiveFireEvidence(prepared) || /(\bblaze\b)/i.test(prepared)) return { type: 'Fire Emergency', service: 'fire', services: ['fire'], score: 8.3, indicators: ['Local NLP rule: active fire or smoke reported'] };
   if (/(burn|scald|luka bakar|terbakar)/i.test(prepared)) return classifyMedicalCondition(`burn injury ${prepared}`);
   if (/(weapon|gun|knife|robbery|theft|assault|threat|armed|crime|police)/i.test(prepared)) return { type: 'Police Emergency', service: 'police', services: ['police'], score: 8, indicators: ['Local NLP rule: police or security response needed'] };
   if (/(accident|crash|injury|wound|bleeding|hurt|trauma|cut|laceration|medical|patient|shortness of breath|difficulty breathing|not breathing|heart attack|stroke)/i.test(prepared)) return { type: 'Medical Emergency', service: 'ambulance', services: ['ambulance'], score: 8, indicators: ['Local NLP rule: injury or medical issue needs medical response'] };
@@ -282,7 +294,7 @@ export async function analyzeEmergencyTextWithNlp(text: string): Promise<NlpEmer
   if (!text.trim()) return null;
   const localResult = analyzeTextWithLocalSafetyRules(text);
   const prepared = prepareText(text);
-  if (medicalConditionPattern.test(prepared) && !activeFirePattern.test(prepared) && !intentionalViolencePattern.test(prepared)) {
+  if (medicalConditionPattern.test(prepared) && !hasActiveFireEvidence(prepared) && !intentionalViolencePattern.test(prepared)) {
     return localResult;
   }
   if (typeof navigator !== 'undefined' && !navigator.onLine) return localResult;

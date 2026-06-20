@@ -870,8 +870,6 @@ const handleNavigate = (screen: 'home' | 'history' | 'profile') => {
           priority={emergencyData.priority || 'Medium'}
           recommendedService={selectedService}
           recommendedServices={emergencyData.services ?? [selectedService]}
-          countryName={country.name}
-          emergencyNumbers={country.emergency}
           reportId={emergencyData.id}
           reportCode={emergencyData.reportCode}
           submittedAt={emergencyData.submittedAt}

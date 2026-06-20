@@ -44,8 +44,17 @@ const candidateLabels = [
 const burnInjuryPattern = /(luka bakar|luka kebakar|kulit terbakar|tubuh terbakar|badan kebakar|tangan kebakar|melepuh|tersiram air panas|terkena air panas|burn wound|burn injury|burned skin|thermal burn|scald)/i;
 const explosionPattern = /(\bexplod(?:e|es|ed|ing)?\b|\bexplosion\b|\bblast(?:ed|ing)?\b|\bdetonat(?:e|es|ed|ing|ion)\b|\bblew up\b|\bblown up\b|\bledakan\b|\bmeledak+k?\b|\bmeleduk\b|\bdentuman keras\b|\bletupan\b|\bmeletup\b|\bsumabog\b|\bpagsabog\b|\bvụ nổ\b|\bphát nổ\b|\bvu no\b|\bphat no\b|bom (meledak|explode)|tabung gas (meledak|explode)|boiler (meledak|explode)|gas cylinder exploded)/i;
 const activeFirePattern = new RegExp(`(\\bkebakaran\\b|\\bfire\\b|\\bflames?\\b|\\bsmoke\\b|\\basap\\b|kobaran api|api (menyala|besar|menjalar|menyebar)|asap (tebal|hitam)|rumah terbakar|gedung terbakar|bangunan terbakar|kendaraan terbakar|\\bactive fire\\b|\\bopen flames?\\b|\\bheavy smoke\\b|house on fire|building on fire|vehicle on fire|burning (house|building|vehicle|car|forest|room)|${explosionPattern.source})`, 'i');
+const nonActiveFireObjectPattern = /\b(fire extinguisher|fire alarm|smoke alarm|smoke detector|fire detector|fire door|fire exit|fire station|fire truck|fire engine|fire hydrant|firefighter|fire fighter|alat pemadam api|pemadam api|tabung apar|apar)\b/i;
 const medicalConditionPattern = /(injury|injured|hurt|bleeding|blood|wound|cut|laceration|abrasion|skin irritation|burning sensation|rash|redness|fracture|burn wound|burn injury|scald|pendarahan|berdarah|darah|luka|luka bakar|luka sobek|luka robek|lecet|gores|iritasi|ruam|kemerahan|melepuh|patah|cedera|trauma|unconscious|unresponsive|pingsan|tidak sadar)/i;
 const minorMedicalPattern = /(iritasi|skin irritation|burning sensation|ruam|rash|kemerahan|redness|lecet|scrape|abrasi|abrasion|gores|goresan|superficial cut|small cut|shallow cut|minor injury|minor wound|small wound|luka kecil|luka ringan|cedera ringan|memar ringan|keseleo ringan|first[ -]degree burn|luka bakar ringan|pain ringan|sakit ringan)/i;
+
+function hasActiveFireEvidence(value: string) {
+  const cleaned = value
+    .replace(new RegExp(nonActiveFireObjectPattern.source, 'gi'), ' ')
+    .replace(/\b(no|without)\s+(visible\s+)?(fire|flames?|smoke)(\s+(or|and)\s+(fire|flames?|smoke))?/gi, ' ')
+    .replace(/\b(tidak ada|tanpa)\s+(api|asap|kebakaran)(\s+(atau|dan)\s+(api|asap|kebakaran))?/gi, ' ');
+  return activeFirePattern.test(cleaned);
+}
 
 function normalizeText(value: string) {
   return value
@@ -240,7 +249,7 @@ function inferLabelFromText(text: string) {
   if (minorMedicalPattern.test(lower)) return 'minor medical issue';
   if (medicalConditionPattern.test(lower) || /(kecelakaan|tabrakan|tertabrak|accident|crash)/i.test(lower)) return 'medical emergency';
   if (explosionPattern.test(lower)) return 'explosion emergency';
-  if (activeFirePattern.test(lower) || /(\bblaze\b|\bsmoke\b)/i.test(lower)) return 'fire rescue emergency';
+  if (hasActiveFireEvidence(lower) || /(\bblaze\b)/i.test(lower)) return 'fire rescue emergency';
   if (/(pencurian|maling|rampok|perampokan|begal|kekerasan|berkelahi|senjata|pisau|pistol|polisi|crime|theft|robbery|assault|weapon|knife|gun|police|threat|threatening|armed)/i.test(lower)) return 'police security emergency';
   if (/(banjir|longsor|gempa|tsunami|badai|puting beliung|flood|landslide|earthquake|storm|hurricane|typhoon|cyclone)/i.test(lower)) return 'natural disaster';
   if (/(kebocoran gas|gas bocor|bau gas|gas menyengat|gas leak|gas odor|carbon monoxide|karbon monoksida|hazmat|bau kimia|asap kimia|chemical exposure|poisoning|toxic)/i.test(lower)) return 'gas leak hazmat emergency';
@@ -306,7 +315,7 @@ function getMedicalFallbackResult(text: string) {
   if (/(not breathing|tidak bernapas|napas berhenti|cardiac arrest|henti jantung|unresponsive|tidak responsif|pendarahan tidak berhenti|uncontrolled bleeding|amputation|amputasi|organ terlihat|exposed organ)/i.test(prepared)) {
     score = 9.8;
     severity = 'critical medical signs';
-  } else if (/(unconscious|tidak sadar|pingsan|pendarahan hebat|heavy bleeding|severe bleeding|luka sangat dalam|deep wound|gaping wound|third[ -]degree burn|luka bakar derajat tiga|luka bakar luas|extensive burn|burn.*(face|airway)|luka bakar.*(wajah|saluran napas)|patah tulang terbuka|open fracture)/i.test(prepared)) {
+  } else if (/(unconscious|tidak sadar|pingsan|pendarahan hebat|heavy bleeding|bleeding heavily|severe bleeding|profuse bleeding|darah mengalir banyak|banyak darah|pool of blood|large blood pool|severe cut|open wound|luka terbuka|luka sangat dalam|deep wound|gaping wound|third[ -]degree burn|luka bakar derajat tiga|luka bakar luas|extensive burn|burn.*(face|airway)|luka bakar.*(wajah|saluran napas)|patah tulang terbuka|open fracture)/i.test(prepared)) {
     score = 9.1;
     severity = 'severe medical signs';
   } else if (minorMedicalPattern.test(prepared)) {
@@ -332,7 +341,7 @@ function getFallbackResult(text: string) {
   const intentional = fallbackRules.find(rule => rule.result.type === 'Intentional Burn Assault' && rule.pattern.test(prepared));
   if (intentional) return intentional.result;
   const medical = getMedicalFallbackResult(prepared);
-  if (medical && activeFirePattern.test(prepared)) {
+  if (medical && hasActiveFireEvidence(prepared)) {
     const explosion = explosionPattern.test(prepared);
     return {
       type: explosion ? 'Explosion Emergency with Medical Casualty' : 'Fire Emergency with Medical Casualty',
@@ -342,8 +351,11 @@ function getFallbackResult(text: string) {
       indicators: [`API fallback NLP: ${explosion ? 'explosion' : 'active fire'} is explicit and a medical casualty is also described`]
     };
   }
-  if (medical && !activeFirePattern.test(prepared)) return medical;
-  return fallbackRules.find(rule => rule.pattern.test(prepared))?.result ?? medical;
+  if (medical && !hasActiveFireEvidence(prepared)) return medical;
+  return fallbackRules.find(rule => {
+    if (rule.result.type === 'Fire Emergency' && !hasActiveFireEvidence(prepared)) return false;
+    return rule.pattern.test(prepared);
+  })?.result ?? medical;
 }
 
 function fallbackResponse(text: string, error?: string) {

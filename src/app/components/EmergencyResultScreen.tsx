@@ -16,8 +16,6 @@ interface EmergencyResultScreenProps {
   priority: 'High' | 'Medium' | 'Low';
   recommendedService: ServiceType;
   recommendedServices: ServiceType[];
-  countryName?: string;
-  emergencyNumbers?: Partial<Record<ServiceType, string>>;
   reportId?: string;
   reportCode?: string;
   submittedAt?: string;
@@ -69,8 +67,6 @@ export function EmergencyResultScreen({
   emergencyType,
   priority,
   recommendedServices,
-  countryName,
-  emergencyNumbers,
   reportId,
   reportCode,
   submittedAt,
@@ -250,19 +246,6 @@ export function EmergencyResultScreen({
                 </span>
               ))}
             </div>
-
-            {emergencyNumbers && (
-              <div className="mt-3 rounded-xl bg-[#eef8ff] p-3 text-[12px] leading-5 text-[#0b3850]">
-                <p className="font-extrabold">Local emergency routing{countryName ? ` - ${countryName}` : ''}</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {(recommendedServices.length ? recommendedServices : ['fire' as ServiceType]).map(service => (
-                    <span key={service} className="rounded-full bg-white px-2.5 py-1 font-bold text-[#475569]">
-                      {getServiceDisplayLabel(service)}: {emergencyNumbers[service] ?? 'N/A'}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
 
             <div className="mt-5 space-y-3 text-[16px] leading-5">
               <p className="flex items-center gap-3"><MapPin className="h-[18px] w-[18px] shrink-0" /><span>{location}</span></p>
