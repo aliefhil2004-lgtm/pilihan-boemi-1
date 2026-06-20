@@ -1,5 +1,6 @@
 import os
 import re
+import json
 from functools import lru_cache
 from typing import Dict, List, Optional
 
@@ -11,26 +12,22 @@ from transformers import pipeline
 
 MODEL_ID = os.getenv("HF_NLP_MODEL", "joeddav/xlm-roberta-large-xnli")
 
-CANDIDATE_LABELS = [
-    "medical emergency",
-    "fire rescue emergency",
-    "police security emergency",
-    "natural disaster",
-    "lost property non emergency",
-    "threatening incident",
-    "dangerous animal threat",
-    "large dangerous animal threat",
-    "drug related crime",
-    "gas leak hazmat emergency",
-    "heart attack or stroke emergency",
-    "respiratory distress emergency",
-    "poisoning or chemical exposure emergency",
-]
+with open(os.path.join(os.path.dirname(__file__), "labels.json"), encoding="utf-8") as handle:
+    CANDIDATE_LABELS = json.load(handle)["labels"]
 
 LABEL_MAPPING: Dict[str, Dict[str, object]] = {
     "medical emergency": {"service": "ambulance", "type": "Medical Emergency", "baseScore": 7, "services": ["ambulance"]},
+    "minor medical issue": {"service": "ambulance", "type": "Minor Medical Issue", "baseScore": 3, "services": ["ambulance"]},
+    "injury or wound": {"service": "ambulance", "type": "Injury or Wound", "baseScore": 6, "services": ["ambulance"]},
+    "burn injury medical emergency": {"service": "ambulance", "type": "Burn Injury Medical Emergency", "baseScore": 8, "services": ["ambulance"]},
+    "burn injury": {"service": "ambulance", "type": "Burn Injury Medical Emergency", "baseScore": 8, "services": ["ambulance"]},
+    "medical issue": {"service": "ambulance", "type": "Medical Issue", "baseScore": 4, "services": ["ambulance"]},
+    "wound": {"service": "ambulance", "type": "Injury or Wound", "baseScore": 6, "services": ["ambulance"]},
     "fire rescue emergency": {"service": "fire", "type": "Fire Emergency", "baseScore": 7, "services": ["fire"]},
+    "fire emergency": {"service": "fire", "type": "Fire Emergency", "baseScore": 7, "services": ["fire"]},
+    "explosion emergency": {"service": "fire", "type": "Explosion Emergency", "baseScore": 9, "services": ["fire"]},
     "police security emergency": {"service": "police", "type": "Police Emergency", "baseScore": 7, "services": ["police"]},
+    "police emergency": {"service": "police", "type": "Police Emergency", "baseScore": 7, "services": ["police"]},
     "natural disaster": {"service": "fire", "type": "Natural Disaster", "baseScore": 8, "services": ["fire"]},
     "lost property non emergency": {"service": "police", "type": "Lost Property Report", "baseScore": 2, "services": ["police"]},
     "threatening incident": {"service": "police", "type": "Police Emergency", "baseScore": 7, "services": ["police"]},
@@ -38,12 +35,22 @@ LABEL_MAPPING: Dict[str, Dict[str, object]] = {
     "large dangerous animal threat": {"service": "police", "type": "Police Ranger - Dangerous Animal", "baseScore": 8, "services": ["police"]},
     "drug related crime": {"service": "police", "type": "Police Emergency", "baseScore": 8, "services": ["police"]},
     "gas leak hazmat emergency": {"service": "fire", "type": "Gas Leak / Hazmat Emergency", "baseScore": 9, "services": ["fire", "ambulance"]},
+    "gas leak or hazmat emergency": {"service": "fire", "type": "Gas Leak / Hazmat Emergency", "baseScore": 9, "services": ["fire", "ambulance"]},
     "heart attack or stroke emergency": {"service": "ambulance", "type": "Cardiac / Stroke Emergency", "baseScore": 9, "services": ["ambulance"]},
+    "cardiac emergency": {"service": "ambulance", "type": "Cardiac / Stroke Emergency", "baseScore": 9, "services": ["ambulance"]},
     "respiratory distress emergency": {"service": "ambulance", "type": "Respiratory Distress Emergency", "baseScore": 9, "services": ["ambulance"]},
     "poisoning or chemical exposure emergency": {"service": "ambulance", "type": "Poisoning / Chemical Exposure", "baseScore": 8, "services": ["ambulance", "fire"]},
+    "animal rescue": {"service": "fire", "type": "Firefighter - Animal Rescue", "baseScore": 6, "services": ["fire"]},
+    "traffic accident": {"service": "ambulance", "type": "Traffic Accident", "baseScore": 7, "services": ["ambulance"]},
+    "general emergency": {"service": "ambulance", "type": "General Emergency", "baseScore": 4, "services": ["ambulance"]},
 }
 
 SAFETY_RULES = [
+    (
+        r"(\bexplod(?:e|es|ed|ing)?\b|\bexplosion\b|\bblast(?:ed|ing)?\b|\bdetonat(?:e|es|ed|ing|ion)\b|\bblew up\b|\bblown up\b|\bledakan\b|\bmeledak+k?\b|\bmeleduk\b|\bdentuman keras\b|\bletupan\b|\bmeletup\b|\bsumabog\b|\bpagsabog\b|\bvụ nổ\b|\bphát nổ\b|bom (meledak|explode)|tabung gas (meledak|explode)|boiler (meledak|explode)|gas cylinder exploded)",
+        "explosion emergency",
+        "NLP safety rule: explosion or detonation reported",
+    ),
     (
         r"(buaya|crocodile|harimau|tiger|beruang|bear|lion|singa|serigala|wolf|macan|leopard|panther|komodo|hewan buas besar|hewan liar besar|predator besar)",
         "large dangerous animal threat",
@@ -88,7 +95,7 @@ def get_classifier():
 
 def mapped_result(label: str, confidence: float, indicator: Optional[str] = None) -> Dict[str, object]:
     mapping = LABEL_MAPPING[label]
-    score = max(1, min(10, round(float(mapping["baseScore"]) + confidence * 2)))
+    score = max(1, min(10, round(float(mapping["baseScore"]) + (confidence - 0.5) * 1.2, 1)))
     indicators = [indicator] if indicator else [f"XLM-RoBERTa NLP: {mapping['type']} ({round(confidence * 100)}% confidence)"]
     return {
         "type": mapping["type"],

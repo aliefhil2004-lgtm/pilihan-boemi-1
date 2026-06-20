@@ -6,6 +6,7 @@ import { t, type Language } from '../i18n';
 import { analyzeEmergencyImage } from '../roboflow';
 import type { EvidenceMetadata } from '../types/emergency';
 import { anonymizePhotoPixels, detectPrivacyRegionsFromPhoto } from '../services/privacyDetector';
+import { formatSeverityScore } from '../utils/severity';
 
 interface EmergencyReportScreenProps {
   onSubmit: (data: {
@@ -159,7 +160,7 @@ export function EmergencyReportScreen({ onSubmit, onBack, defaultLocation, defau
         canvas.width = Math.round(video.videoWidth * scale);
         canvas.height = Math.round(video.videoHeight * scale);
         canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const frame = canvas.toDataURL('image/jpeg', 0.68);
+        const frame = canvas.toDataURL('image/jpeg', 0.82);
         const privacyRegions = await detectPrivacyRegionsFromPhoto(frame);
         const anonymizedFrame = await anonymizePhotoPixels(frame, privacyRegions);
         const result = await analyzeEmergencyImage(anonymizedFrame, description);
@@ -386,7 +387,7 @@ export function EmergencyReportScreen({ onSubmit, onBack, defaultLocation, defau
                         {tr('report.liveDetected')}: <span className="font-semibold text-green-300">{liveDetection.incidentType}</span>
                       </p>
                       <p>
-                        {tr('report.liveSeverity')}: <span className="font-semibold text-yellow-300">{liveDetection.severityScore}/10</span>
+                        {tr('report.liveSeverity')}: <span className="font-semibold text-yellow-300">{formatSeverityScore(liveDetection.severityScore)}/10</span>
                       </p>
                     </div>
                   ) : (

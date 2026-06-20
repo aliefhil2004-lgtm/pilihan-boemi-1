@@ -400,6 +400,10 @@ export default function App() {
         'indicators' in aiResult && Array.isArray(aiResult.indicators)
           ? aiResult.indicators
           : [];
+      const assessmentSummary =
+        'assessmentSummary' in aiResult && typeof aiResult.assessmentSummary === 'string'
+          ? aiResult.assessmentSummary
+          : undefined;
       const requiredServices =
         'services' in aiResult && Array.isArray(aiResult.services) && aiResult.services.length
           ? aiResult.services
@@ -451,6 +455,7 @@ export default function App() {
             : 'Low',
         emergencyType: aiResult.type,
         detectedIndicators,
+        assessmentSummary,
         annotatedImage: anonymizedPhoto ?? aiResult.annotatedImage,
         privacyRegions: aiResult.privacyRegions,
         evidenceMetadata: data.evidenceMetadata,

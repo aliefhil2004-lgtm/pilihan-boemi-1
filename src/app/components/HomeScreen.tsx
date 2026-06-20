@@ -5,6 +5,7 @@ import type { StoredEmergencyReport } from '../types/emergency';
 import { getReportServices, getServiceStatus } from '../types/emergency';
 import { cleanupExpiredReports } from '../services/reportStorage';
 import { t, type Language } from '../i18n';
+import { formatSeverityScore } from '../utils/severity';
 
 interface HomeScreenProps {
   onEmergencyStart: () => void;
@@ -184,7 +185,7 @@ export function HomeScreen({ onEmergencyStart, onServiceSelect, onOpenDangerMap,
                       <div className="mt-2 flex flex-wrap items-center gap-3">
                         <p className="text-[14px] font-bold leading-5 text-white/90">{priorityLabel}</p>
                         <span className="rounded-md bg-white/15 px-2 py-1 text-[10px] font-bold text-white">
-                          {highestPriorityReport.injuryScale}/10
+                          {formatSeverityScore(highestPriorityReport.injuryScale)}/10
                         </span>
                       </div>
                       <p className="mt-2 truncate text-[14px] leading-5 text-white/85">

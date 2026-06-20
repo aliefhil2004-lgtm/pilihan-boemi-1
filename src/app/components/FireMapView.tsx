@@ -6,6 +6,7 @@ import type { PublicCctvCamera } from '../config/cctv';
 import type { LiveGpsLocation } from '../services/liveGps';
 import { getVisibleDangerZones } from '../config/dangerZones';
 import { getReportMarkerMeta } from '../utils/mapMarkers';
+import { formatSeverityScore } from '../utils/severity';
 
 interface FireMapViewProps {
   userLocation: { lat: number; lng: number };
@@ -260,7 +261,7 @@ export function FireMapView({ userLocation, reports, cameras, onCameraSelect, li
         popup.append(level, document.createElement('br'));
         popup.append(feature.properties.title, document.createElement('br'));
         popup.append(feature.properties.location, document.createElement('br'));
-        popup.append(`Priority: ${feature.properties.priority}/10`, document.createElement('br'));
+        popup.append(`Priority: ${formatSeverityScore(feature.properties.priority)}/10`, document.createElement('br'));
         popup.append(`Radius: ${feature.properties.radiusMeters}m`, document.createElement('br'));
         popup.append(`Services: ${feature.properties.services}`);
 
@@ -282,7 +283,7 @@ export function FireMapView({ userLocation, reports, cameras, onCameraSelect, li
             popup.append(`${index + 1}. ${point.report.emergencyType ?? 'Emergency Report'}`, document.createElement('br'));
           }
           popup.append(point.report.location, document.createElement('br'));
-          popup.append(`Priority: ${point.report.injuryScale}/10`, document.createElement('br'));
+          popup.append(`Priority: ${formatSeverityScore(point.report.injuryScale)}/10`, document.createElement('br'));
           if (point.zones.length) {
             const zone = point.zones[point.zones.length - 1];
             popup.append(`Main zone: ${zone.label} (${zone.radiusMeters}m)`, document.createElement('br'));

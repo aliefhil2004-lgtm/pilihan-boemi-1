@@ -45,6 +45,46 @@ function parseBody(value: unknown) {
   return {} as Record<string, unknown>;
 }
 
+function normalizeWorkflowPayload(requestBody: Record<string, unknown>) {
+  if (requestBody.inputs && typeof requestBody.inputs === 'object') {
+    return requestBody;
+  }
+
+  if (requestBody.image || requestBody.report_text || requestBody.workflow_id || requestBody.workspace_name) {
+    return {
+      inputs: requestBody
+    };
+  }
+
+  return requestBody;
+}
+
+function isEnhancementOnlyLabel(value: string) {
+  return /(upscale|super resolution|enhancement|lighting|light|brightness|contrast|sharpen|denoise|noise reduction|quality|blur|deblur|color correction|image preprocessing|preprocessing|image enhancement|photo quality)/i.test(value);
+}
+
+function scrubEnhancementLabels(body: string) {
+  try {
+    const parsed = JSON.parse(body) as { outputs?: Array<Record<string, unknown>> };
+    if (!Array.isArray(parsed.outputs)) return body;
+    const outputs = parsed.outputs.map(output => {
+      const incidentType = typeof output.incident_type === 'string' ? output.incident_type : '';
+      if (isEnhancementOnlyLabel(incidentType)) {
+        return {
+          ...output,
+          incident_type: 'general emergency',
+          severity_score: 2,
+          description: `${typeof output.description === 'string' ? output.description + ' ' : ''}Image enhancement output ignored for incident routing.`.trim()
+        };
+      }
+      return output;
+    });
+    return JSON.stringify({ ...parsed, outputs });
+  } catch {
+    return body;
+  }
+}
+
 export default async function handler(request: VercelRequest, response: VercelResponse) {
   response.setHeader('Content-Type', 'application/json');
 
@@ -80,12 +120,13 @@ export default async function handler(request: VercelRequest, response: VercelRe
       const timeout = setTimeout(() => controller.abort(), Math.min(52_000, remainingMs));
 
       try {
+        const payload = normalizeWorkflowPayload(requestBody);
         const roboflowResponse = await fetch(workflowUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           signal: controller.signal,
           body: JSON.stringify({
-            ...requestBody,
+            ...payload,
             api_key: process.env.ROBOFLOW_API_KEY
           })
         });
@@ -99,7 +140,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
             'Content-Type',
             roboflowResponse.headers.get('content-type') || 'application/json'
           );
-          return response.end(body);
+          return response.end(scrubEnhancementLabels(body));
         }
 
         if (!roboflowResponse.ok && !RETRYABLE_STATUSES.has(roboflowResponse.status)) {

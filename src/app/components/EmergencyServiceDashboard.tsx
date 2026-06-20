@@ -16,6 +16,7 @@ import { updateIncidentStatus } from '../services/incidentsApi';
 import { PrivacyImage } from './PrivacyImage';
 import { getServiceDisplayLabel } from '../utils/serviceLabels';
 import { formatReportDateTime } from '../utils/date';
+import { formatSeverityScore } from '../utils/severity';
 
 type EmergencyReport = Omit<StoredEmergencyReport, 'timestamp'> & {
   timestamp: Date;
@@ -922,7 +923,7 @@ export function EmergencyServiceDashboard({ serviceType, onOpenChat, onCallCitiz
           <section className="rounded-lg border-l-[5px] bg-white p-4 shadow-[0_4px_12px_rgba(0,0,0,0.10)]" style={{ borderLeftColor: theme.accent }}>
             <div className="flex items-center justify-between text-xs">
               <h3 className="font-semibold uppercase leading-4 tracking-[0.6px] text-[#42474d]">Priority Scale</h3>
-              <span className="font-bold" style={{ color: getInjuryScaleHex(selectedReport.injuryScale) }}>{selectedReport.injuryScale.toFixed(1)}/10</span>
+              <span className="font-bold" style={{ color: getInjuryScaleHex(selectedReport.injuryScale) }}>{formatSeverityScore(selectedReport.injuryScale)}/10</span>
             </div>
             <div className="mt-3 h-2 overflow-hidden rounded-full border border-[#0c324a]/10 bg-[#eef3f7]">
               <div

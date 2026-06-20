@@ -9,6 +9,7 @@ import type { Language } from '../i18n';
 import { PrivacyImage } from './PrivacyImage';
 import { getServiceDisplayLabel } from '../utils/serviceLabels';
 import { formatReportDateTime } from '../utils/date';
+import { formatSeverityScore } from '../utils/severity';
 
 interface EmergencyResultScreenProps {
   emergencyType: string;
@@ -23,6 +24,7 @@ interface EmergencyResultScreenProps {
   injuryScale: number;
   location: string;
   detectedIndicators?: string[];
+  assessmentSummary?: string;
   annotatedImage?: string;
   privacyRegions?: PrivacyRegion[];
   aiConfidence?: number;
@@ -75,6 +77,7 @@ export function EmergencyResultScreen({
   injuryScale,
   location,
   detectedIndicators,
+  assessmentSummary,
   annotatedImage,
   privacyRegions,
   aiConfidence,
@@ -228,6 +231,13 @@ export function EmergencyResultScreen({
               />
             )}
 
+            {assessmentSummary && (
+              <div className="mt-4 rounded-xl border border-[#dbeafe] bg-[#f8fbff] p-4 text-[13px] text-[#0b3850]">
+                <p className="text-[14px] font-extrabold">Assessment summary</p>
+                <p className="mt-2 leading-6">{assessmentSummary}</p>
+              </div>
+            )}
+
             <div className="mt-5 flex flex-wrap gap-2">
               {(recommendedServices.length ? recommendedServices : ['fire' as ServiceType]).map(service => (
                 <span
@@ -257,7 +267,7 @@ export function EmergencyResultScreen({
             <div className="mt-5 space-y-3 text-[16px] leading-5">
               <p className="flex items-center gap-3"><MapPin className="h-[18px] w-[18px] shrink-0" /><span>{location}</span></p>
               <p className="flex items-center gap-3"><Clock className="h-[18px] w-[18px] shrink-0" /><span>{submittedTimeLabel}</span></p>
-              <p>Severity scale: <span className="font-extrabold text-[#d21a25]">{injuryScale}/10</span></p>
+              <p>Severity scale: <span className="font-extrabold text-[#d21a25]">{formatSeverityScore(injuryScale)}/10</span></p>
             </div>
 
             <div className="mt-5 rounded-xl bg-[#f7f7f7] p-4 text-[13px] text-[#6f7785]">

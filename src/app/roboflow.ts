@@ -8,7 +8,10 @@ function inferIncidentType(reportText: string) {
   if (/gas leak|gas odor|kebocoran gas|gas bocor|bau gas|carbon monoxide|karbon monoksida|hazmat|bau kimia|asap kimia/.test(lower)) {
     return 'gas leak hazmat emergency';
   }
-  if (/fire|flame|smoke|burning|explosion|kebakaran|api|asap|terbakar|ledakan/.test(lower)) return 'fire emergency';
+  if (/luka bakar|luka kebakar|kulit terbakar|burn wound|burn injury|burned skin|scald|iritasi|luka sobek|luka robek|lecet|gores|wound|laceration|abrasion/.test(lower)) {
+    return 'medical emergency';
+  }
+  if (/(\bkebakaran\b|\bfire\b|\bflames?\b|\bsmoke\b|\basap\b|kobaran api|api (menyala|besar|menjalar|menyebar)|burning (house|building|vehicle|car|forest|room)|\bexplod(?:e|es|ed|ing)?\b|\bexplosion\b|\bblast(?:ed|ing)?\b|\bdetonat(?:e|es|ed|ing|ion)\b|\bblew up\b|\bblown up\b|ledakan|meledak+k?|meleduk|letupan|meletup|sumabog|pagsabog)/.test(lower)) return 'fire emergency';
   if (/weapon|gun|knife|robbery|assault|theft|crime|pistol|pisau|rampok|pencurian|kekerasan|polisi/.test(lower)) {
     return 'police emergency';
   }
@@ -44,6 +47,10 @@ type DetectorAssessment = {
   evidence: string;
 };
 
+function isEnhancementOnlyIncident(value: string) {
+  return /(upscale|super resolution|enhancement|lighting|light|brightness|contrast|sharpen|denoise|noise reduction|quality|blur|deblur|color correction|image preprocessing|preprocessing|image enhancement|photo quality)/i.test(value);
+}
+
 function readPredictions(value: unknown): WorkflowPrediction[] {
   if (!value || typeof value !== 'object') return [];
   const predictions = (value as { predictions?: unknown }).predictions;
@@ -78,6 +85,13 @@ function inferDetectorAssessment(output: Record<string, unknown>): DetectorAsses
       }))
   );
 
+  const enhancementOnlyGroups = ['upscale_predictions', 'lighting_predictions', 'enhancement_predictions', 'quality_predictions'];
+  const enhancementSignals = enhancementOnlyGroups.flatMap(key =>
+    readPredictions(output[key])
+      .filter(prediction => predictionConfidence(prediction) >= 0.35)
+      .map(prediction => typeof prediction.class === 'string' ? prediction.class.toLowerCase() : key)
+  );
+
   const genericPredictions = [
     ...readPredictions(output.detections),
     ...readPredictions(output.my_first_project_predictions),
@@ -96,8 +110,26 @@ function inferDetectorAssessment(output: Record<string, unknown>): DetectorAsses
       candidates.push({ incidentType: 'fire emergency', severityScore: 8, confidence, evidence: label });
     } else if (/accident|collision|crash|wreck|kecelakaan|tabrakan/.test(label)) {
       candidates.push({ incidentType: 'traffic accident', severityScore: 8, confidence, evidence: label });
+    } else if (isEnhancementOnlyIncident(label)) {
+      enhancementSignals.push(label);
     }
   });
+
+  if (!candidates.length && enhancementSignals.length) {
+    return {
+      incidentType: 'general emergency',
+      severityScore: 2,
+      confidence: Math.max(...enhancementSignals.map(() => 0.35), 0.35),
+      evidence: enhancementSignals.join(', ')
+    };
+  }
+
+  const medicalCandidates = candidates.filter(candidate => candidate.incidentType === 'medical emergency');
+  const description = typeof output.description === 'string' ? output.description.toLowerCase() : '';
+  const concreteFireScene = /(visible flames?|open flames?|active fire|heavy smoke|thick smoke|black smoke|burning (house|building|vehicle|car|forest|room)|kobaran api|api (menyala|besar|menjalar|menyebar)|asap (tebal|hitam)|rumah terbakar|gedung terbakar|bangunan terbakar|kendaraan terbakar)/i.test(description);
+  if (medicalCandidates.length && !concreteFireScene) {
+    return medicalCandidates.sort((left, right) => right.confidence - left.confidence)[0];
+  }
 
   return candidates.sort((left, right) =>
     right.severityScore - left.severityScore || right.confidence - left.confidence
@@ -119,8 +151,32 @@ function normalizeRoboflowResult(value: unknown, reportText: string) {
   const currentSeverity = Number(output.severity_score);
   const hasSpecificIncident = Boolean(currentIncident) && !/^(none|general emergency|unknown)$/.test(currentIncident);
 
+  if (/burn injury|luka bakar|burn wound|burned skin|scald/i.test(currentIncident)) {
+    const severityScore = Number.isFinite(currentSeverity) ? currentSeverity : 7.5;
+    return {
+      ...payload,
+      outputs: [
+        {
+          ...output,
+          incident_type: 'burn injury medical emergency',
+          severity_score: severityScore,
+          confidence: Math.max(Number(output.confidence ?? 0), 0.7),
+          description: typeof output.description === 'string' ? output.description : 'Burn injury detected by Roboflow workflow.'
+        },
+        ...payload.outputs.slice(1),
+      ],
+    };
+  }
+
+  // Prefer the workflow's own incident/severity fields when they are already present.
+  // Only fall back to local inference when Roboflow omits the metadata entirely.
+  if (hasSpecificIncident && Number.isFinite(currentSeverity)) {
+    return value;
+  }
+
   if (
     detectorAssessment &&
+    !isEnhancementOnlyIncident(detectorAssessment.incidentType) &&
     (!hasSpecificIncident || !Number.isFinite(currentSeverity) || detectorAssessment.severityScore > currentSeverity)
   ) {
     return {
@@ -157,12 +213,21 @@ function normalizeRoboflowResult(value: unknown, reportText: string) {
         description: 'Roboflow workflow returned visual evidence without incident metadata; incident was inferred from report text.',
         confidence: typeof output.confidence === 'number' ? output.confidence : 0.45,
         ...output,
-        incident_type: incidentType,
+        incident_type: isEnhancementOnlyIncident(incidentType) ? 'general emergency' : incidentType,
         severity_score: inferSeverityScore(incidentType, reportText),
       },
       ...payload.outputs.slice(1),
     ],
   };
+}
+
+export function isRoboflowEnhancementOnlyIncident(value: unknown) {
+  if (!value || typeof value !== 'object') return false;
+  const payload = value as { outputs?: Array<Record<string, unknown>> };
+  const output = payload.outputs?.[0];
+  if (!output || typeof output !== 'object') return false;
+  const incidentType = typeof output.incident_type === 'string' ? output.incident_type : '';
+  return /(upscale|super resolution|enhancement|lighting|light|brightness|contrast|sharpen|denoise|noise reduction|quality|blur|deblur|color correction|image preprocessing|preprocessing|image enhancement|photo quality)/i.test(incidentType);
 }
 
 function compressImageForInference(imageBase64: string): Promise<string> {
@@ -174,7 +239,7 @@ function compressImageForInference(imageBase64: string): Promise<string> {
     const image = new Image();
     image.onerror = () => resolve(imageBase64);
     image.onload = () => {
-      const maxDimension = 1280;
+      const maxDimension = 1600;
       const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
       const canvas = document.createElement('canvas');
       canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
@@ -185,7 +250,7 @@ function compressImageForInference(imageBase64: string): Promise<string> {
         return;
       }
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL('image/jpeg', 0.76));
+      resolve(canvas.toDataURL('image/jpeg', 0.82));
     };
     image.src = imageBase64;
   });

@@ -1,0 +1,31 @@
+{
+  "labels": [
+    "medical emergency",
+    "minor medical issue",
+    "injury or wound",
+    "burn injury medical emergency",
+    "burn injury",
+    "medical issue",
+    "wound",
+    "fire rescue emergency",
+    "fire emergency",
+    "explosion emergency",
+    "police security emergency",
+    "police emergency",
+    "natural disaster",
+    "lost property non emergency",
+    "threatening incident",
+    "dangerous animal threat",
+    "large dangerous animal threat",
+    "drug related crime",
+    "gas leak hazmat emergency",
+    "gas leak or hazmat emergency",
+    "heart attack or stroke emergency",
+    "cardiac emergency",
+    "respiratory distress emergency",
+    "poisoning or chemical exposure emergency",
+    "animal rescue",
+    "traffic accident",
+    "general emergency"
+  ]
+}

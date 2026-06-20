@@ -7,6 +7,7 @@ import { fetchLiveGps } from '../services/liveGps';
 import { PrivacyImage } from './PrivacyImage';
 import { getServiceDisplayLabel } from '../utils/serviceLabels';
 import { formatReportDateTime } from '../utils/date';
+import { formatSeverityScore } from '../utils/severity';
 
 interface ReportHistoryScreenProps {
   initialReportId?: string | null;
@@ -181,7 +182,7 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onOpenCall, o
               <div className="mt-5 space-y-3 text-[16px] leading-5">
                 <p className="flex items-center gap-3"><MapPin className="h-[18px] w-[18px] shrink-0" /><span>{selectedReport.location}</span></p>
                 <p className="flex items-center gap-3"><Clock className="h-[18px] w-[18px] shrink-0" /><span>{submittedTimeLabel}</span></p>
-                <p>Severity scale: <span className="font-extrabold text-[#d21a25]">{selectedReport.injuryScale}/10</span></p>
+                <p>Severity scale: <span className="font-extrabold text-[#d21a25]">{formatSeverityScore(selectedReport.injuryScale)}/10</span></p>
               </div>
 
               <div className="mt-5 rounded-xl bg-[#f7f7f7] p-4 text-[13px] text-[#6f7785]">
@@ -357,7 +358,7 @@ export function ReportHistoryScreen({ initialReportId, onOpenChat, onOpenCall, o
               <div className="space-y-2 text-[#0b3850]">
                 <p className="flex items-center gap-3 text-[12px] leading-5"><MapPin className="h-4 w-4" />{selectedReport.location}</p>
                 <p className="flex items-center gap-3 text-[14px] leading-5"><Clock className="h-4 w-4" />{formatReportDateTime(selectedReport.timestamp)}</p>
-                <p>Severity scale: <span className="font-bold">{selectedReport.injuryScale}/10</span></p>
+                <p>Severity scale: <span className="font-bold">{formatSeverityScore(selectedReport.injuryScale)}/10</span></p>
               </div>
 
               {selectedReport.detectedIndicators?.length ? (
